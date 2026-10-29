@@ -217,7 +217,9 @@ body.menu-open .hud, body.menu-open .labels, body.menu-open .thumbs, body.menu-o
 .joy.dragging { cursor: grabbing; }
 .switch:focus-visible, .joy:focus-visible, .vslider:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
 .mission { margin: 0; font-size: 16px; color: var(--ink); white-space: nowrap; text-align: center; flex: 1 1 auto; }
-@media (max-width: 1100px) { .mission { display: none; } }
+@media (max-width: 1100px), (max-height: 560px) { .mission { display: none; } }
+/* any touch screen, landscape phones included: iOS zooms into a focused field set under 16px */
+@media (pointer: coarse) { .cfield { font-size: 16px; } }
 
 /* --- compact HUD: phones, and anything short (landscape phones) --------------------------------------------
    One row along the bottom: the dot slider lies down and stretches, the switches sit side by side, the joystick
@@ -797,7 +799,8 @@ const A = { ctx: null, on: true, vol: 0.7, speed: 0, lastTick: 0, lastCascade: 0
 const clampPan = v => Math.max(-0.9, Math.min(0.9, v));
 
 function audioInit() {
-  if (A.ctx) { if (A.ctx.state === 'suspended') A.ctx.resume(); return; }
+  // 'interrupted' is WebKit's state after a call, screen lock or backgrounding; it needs the same nudge
+  if (A.ctx) { if (A.ctx.state !== 'running' && A.ctx.state !== 'closed') A.ctx.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   const ctx = A.ctx = new AC();
@@ -859,6 +862,12 @@ function audioInit() {
   for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
 }
 const live = () => A.ctx && A.on && A.ctx.state === 'running';
+// For sounds made by the very gesture that unlocks audio: resume() is async, so on a phone's first tap the context
+// isn't running yet when the handler fires. Plays now if it can, otherwise as soon as the resume lands.
+function whenLive(fn) {
+  if (live()) { fn(); return; }
+  if (A.ctx && A.on && A.ctx.state !== 'closed') A.ctx.resume().then(() => { if (live()) fn(); }).catch(() => {});
+}
 
 function voiceOut(pan, send) {
   const ctx = A.ctx;
@@ -2019,20 +2028,32 @@ function resize() {
 // are a hidden or throttled tab, not a slow GPU, so they don't count.
 const PERF_TARGET = 1 / 40, PERF_WINDOW = 2, PERF_WARMUP = 3;
 const perf = { t: 0, n: 0, age: 0 };
+// Timing alone can't tell a struggling GPU from a phone capped at 30fps (Low Power Mode, battery savers): both
+// show steady ~33ms frames. So each step down is a probe: if the next window isn't clearly faster, the cap was
+// the limit, not the pixels — put the resolution back and stop checking.
+const PERF_GAIN = 0.85; // a step must bring the average frame under 85% of what it was to count
+let perfDone = false, perfProbe = null; // { from: step we left, avg: average before the step }
 function perfCheck(rawDt) {
   perf.age += Math.min(rawDt, 0.2);
-  if (rawDt > 0.2 || perf.age < PERF_WARMUP || dprStep >= DPR_STEPS.length - 1) return;
+  if (perfDone || rawDt > 0.2 || perf.age < PERF_WARMUP) return;
   perf.t += rawDt; perf.n++;
   if (perf.t < PERF_WINDOW) return;
-  if (perf.t / perf.n > PERF_TARGET) {
-    // jump to the next step that actually lowers the resolution (on a 1× screen, 1.5 → 1.25 changes nothing)
-    const dev = window.devicePixelRatio || 1, cur = Math.min(dev, DPR_STEPS[dprStep]);
-    let next = dprStep + 1;
-    while (next < DPR_STEPS.length && Math.min(dev, DPR_STEPS[next]) >= cur) next++;
-    if (next < DPR_STEPS.length) { dprStep = next; resize(); }
-    else dprStep = DPR_STEPS.length - 1; // nothing lower to go to: stop checking
-  }
+  const avg = perf.t / perf.n;
   perf.t = perf.n = 0;
+  if (perfProbe) {
+    const helped = avg < perfProbe.avg * PERF_GAIN;
+    if (!helped) { dprStep = perfProbe.from; resize(); perfDone = true; } // capped: undo, and leave it be
+    perfProbe = null;
+    if (!helped || avg <= PERF_TARGET) return;
+  }
+  if (avg <= PERF_TARGET) return;
+  // jump to the next step that actually lowers the resolution (on a 1× screen, 1.5 → 1.25 changes nothing)
+  const dev = window.devicePixelRatio || 1, cur = Math.min(dev, DPR_STEPS[dprStep]);
+  let next = dprStep + 1;
+  while (next < DPR_STEPS.length && Math.min(dev, DPR_STEPS[next]) >= cur) next++;
+  if (next >= DPR_STEPS.length) { perfDone = true; return; } // nothing lower to go to
+  perfProbe = { from: dprStep, avg };
+  dprStep = next; resize();
 }
 addEventListener('resize', resize);
 resize();
@@ -2475,9 +2496,8 @@ canvas.addEventListener('pointercancel', () => { tapStart = null; mouse.inside =
 function pulseAt() {
   audioInit();
   const pan = mouse.rawX / 450;
-  const pitch = Math.round((mouse.tx + 450) / 900 * 10);
-  pluck(noteFreq(pitch), pan, 0.6 + Math.max(0, -mouse.ty) / 300, 0.26, 1.5);
-  zap(pan);
+  const pitch = Math.round((mouse.tx + 450) / 900 * 10), bright = 0.6 + Math.max(0, -mouse.ty) / 300;
+  whenLive(() => { pluck(noteFreq(pitch), pan, bright, 0.26, 1.5); zap(pan); }); // a phone's first tap is the unlock
   if (!reduce) { shock.x = mouse.tx; shock.y = mouse.ty; shock.age = 0; shock.id++; }
   if (rd) { const [u, v] = worldToUv(mouse.tx, mouse.ty); rd.splat(u, v, 12); }
   else { shock.x = mouse.tx; shock.y = mouse.ty; }
@@ -2703,7 +2723,7 @@ function drainTo(x, y) {
 logo.addEventListener('pointerenter', e => { fillFrom(...edgePoint(e)); wesVoice(); });
 // a tap gives no hover to speak of: the pour runs on the press, and the voice on the lift (the audio may only just
 // have been allowed to start by then)
-logo.addEventListener('pointerup', e => { if (e.pointerType === 'touch') { audioInit(); wesVoice(); } });
+logo.addEventListener('pointerup', e => { if (e.pointerType === 'touch') { audioInit(); whenLive(wesVoice); } });
 logo.addEventListener('pointerleave', e => drainTo(...edgePoint(e)));
 logo.addEventListener('focus', () => fillFrom(0, LOGO_H / 2));
 logo.addEventListener('blur', () => drainTo(LOGO_W, LOGO_H / 2));
@@ -2845,8 +2865,9 @@ function swapContact(open) {
   contactOpen = open;
   contactEl.hidden = !open;
   document.body.classList.toggle('contact-open', open);
-  document.documentElement.style.overflow = open ? 'hidden' : '';
-  if (lenis) open ? lenis.stop() : lenis.start();
+  // the phone menu can be up too (e.g. opened during the send takeover): the page only unfreezes if it isn't
+  document.documentElement.style.overflow = open || menuOpen ? 'hidden' : '';
+  if (lenis) { if (open) lenis.stop(); else if (!menuOpen) lenis.start(); }
   if (open) { contactGoo.appendChild(canvas); contactEl.scrollTop = 0; }
   else document.body.insertBefore(canvas, canvasHome);
   mouse.inside = false; mouse.down = false;
@@ -2909,7 +2930,8 @@ function setMenu(open, { focus = false } = {}) {
   document.documentElement.style.overflow = open || contactOpen ? 'hidden' : '';
   tick(noteFreq(open ? 12 : 8), 0, 0.05, 'square', 0.06);
   if (open) {
-    if (window.gsap && !reduce) gsap.from(mnav.querySelectorAll('li, p, .mnav-contact'), { opacity: 0, x: -28, duration: 0.5, ease: 'power3.out', stagger: 0.06 });
+    // fromTo with overwrite: a quick close-and-reopen restarts from scratch instead of freezing mid-fade
+    if (window.gsap && !reduce) gsap.fromTo(mnav.querySelectorAll('li, p, .mnav-contact'), { opacity: 0, x: -28 }, { opacity: 1, x: 0, duration: 0.5, ease: 'power3.out', stagger: 0.06, overwrite: true });
     if (focus) mnav.querySelector('button').focus({ preventScroll: true });
   } else if (focus) menuBtn.focus({ preventScroll: true });
 }
@@ -2924,8 +2946,13 @@ mainFoot.classList.add('main-foot');
 sectionsEl.after(mainFoot);
 // the HUD would sit on top of the footer, so it steps aside while the footer's in view
 new IntersectionObserver(([e]) => document.body.classList.toggle('at-foot', e.isIntersecting)).observe(mainFoot);
-// and once it's up under the nav (the top ~15% band), the nav takes a backing so the two don't overlap
-new IntersectionObserver(([e]) => document.body.classList.toggle('foot-under-nav', e.isIntersecting), { rootMargin: '0px 0px -85% 0px' }).observe(mainFoot);
+// and once its top reaches the nav's bottom edge, the nav takes a backing so the two don't overlap (measured
+// against the nav itself, since a fixed % band misses on short landscape screens)
+const navEl = document.querySelector('.nav');
+const footUnderNav = () => document.body.classList.toggle('foot-under-nav', mainFoot.getBoundingClientRect().top < navEl.offsetHeight);
+addEventListener('scroll', footUnderNav, { passive: true });
+addEventListener('resize', footUnderNav);
+footUnderNav();
 // one listener for both copies (cloneNode doesn't carry listeners)
 addEventListener('click', e => {
   if (e.target.closest('.cmute')) { setSound(!A.on); return; }
