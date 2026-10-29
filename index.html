@@ -98,6 +98,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .seg button, .btns button {
   font: inherit; color: var(--fg); background: transparent; border: 0; padding: 6px 0; cursor: pointer;
 }
+.seg4 { grid-template-columns: repeat(4, 1fr); }
+.seg4 button { font-size: 10px; padding: 6px 2px; line-height: 1.2; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -138,7 +140,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 
 <div class="hud">
   <h1>Goo Field</h1>
-  <p>scroll for sections · move to pull · click to pulse</p>
+  <p>scroll for sections · move to pull · click to pulse · space to morph</p>
   <p>sound starts on your first click</p>
   <div class="sec" id="sec"><span id="sec-name"></span><strong id="sec-title"></strong></div>
 </div>
@@ -160,7 +162,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
       </div>
       <div class="row"><label for="count">Balls</label><input id="count" type="range" min="6" max="96" value="53"><output id="count-o">53</output></div>
       <div class="row"><label for="k">Goo</label><input id="k" type="range" min="2" max="90" value="36"><output id="k-o">36</output></div>
-      <div class="row"><label for="plus">Plus marks</label><input id="plus" type="range" min="0" max="16" value="8"><output id="plus-o">8</output></div>
+      <div class="row"><label for="plus">Glyphs</label><input id="plus" type="range" min="0" max="24" value="16"><output id="plus-o">16</output></div>
       <div class="row"><label for="rd">RD field</label><input id="rd" type="range" min="0" max="100" value="70"><output id="rd-o">70%</output></div>
       <div class="row"><label for="contours">Contours</label><input id="contours" type="range" min="0" max="16" value="3"><output id="contours-o">3</output></div>
       <div class="row"><label for="spacing">Line gap</label><input id="spacing" type="range" min="6" max="48" value="18"><output id="spacing-o">18</output></div>
@@ -169,10 +171,16 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
       <div class="row"><label for="csize">Cursor size</label><input id="csize" type="range" min="0" max="70" value="30"><output id="csize-o">30</output></div>
       <div class="row"><label for="force">Pull force</label><input id="force" type="range" min="0" max="200" value="100"><output id="force-o">1.0</output></div>
       <div class="row"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="70"><output id="vol-o">70</output></div>
+      <div class="seg seg4" role="group" aria-label="Dashed line">
+        <button data-dash="0" aria-pressed="false">Solid</button>
+        <button data-dash="1" aria-pressed="true">Dash contour</button>
+        <button data-dash="2" aria-pressed="false">Dash orbit</button>
+        <button data-dash="3" aria-pressed="false">Both</button>
+      </div>
       <label class="check" for="morphclick"><input id="morphclick" type="checkbox" checked> Morph on click</label>
       <label class="check" for="mirror"><input id="mirror" type="checkbox"> Mirror down the centre (M)</label>
       <div class="btns">
-        <button id="morph">Morph</button>
+        <button id="morph">Morph · Centred</button>
         <button id="reset">Reset</button>
         <button id="sound" aria-pressed="true">Sound on</button>
         <button id="invert" aria-pressed="false">Invert (I)</button>
@@ -183,10 +191,12 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 
 <script>
 (() => {
-const N = 96;
-const PN = 16; // plus marks (kept small: uniform slots are shared with the 96 shapes)
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false });
+// shapes and glyphs share the fragment uniform budget (2 vec4 each); phones often only have ~221 slots
+const MAXU = gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS);
+const N = MAXU >= 320 ? 96 : 72;
+const GN = Math.max(4, Math.min(24, Math.floor((MAXU - 2 * N - 24) / 2))); // perimeter/scatter glyphs
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---------- audio ----------
@@ -447,8 +457,12 @@ const nodes = [];
 function add(layer, ax, ay, bx, by, r, hole, flag) {
   nodes.push({ layer, rax: ax, ray: ay, rox: bx - ax, roy: by - ay, r, hole, flag,
     x: ax, y: ay, vx: 0, vy: 0, ph: Math.random() * 6.283, s: 1, vis: true, pri: 0,
-    w: layer === 0 ? 1 : layer === 1 ? 0.5 : 0.75 });
+    w: layer === 0 ? 1 : layer === 1 ? 0.5 : 0.75,
+    sq: 0, // 0 circle, 1 squircle, 2 rounded square, 3 square
+    band: layer === 1 ? 0.75 : 0, bandR: 0.8 }); // shells gather into the outline of square/diamond/cylinder
 }
+// square-ify the last `k` shapes added (k = 2 for a mirrored pair)
+const Q = (sq, k = 1) => { for (let i = 1; i <= k; i++) nodes[nodes.length - i].sq = sq; };
 const C  = (x, y, r, hole = 0, dot = 0) => add(0, x, y, x, y, r, hole, dot);
 const CC = (x1, y1, x2, y2, r) => add(0, x1, y1, x2, y2, r, 0, 0);
 const S  = (x, y, r, flag = 1) => add(1, x, y, x, y, r, 0, flag);
@@ -457,15 +471,15 @@ const P  = (x1, y1, x2, y2, r, slot = 0, filled = 0) => add(2, x1, y1, x2, y2, r
 
 // core spine
 C(0, -95, 46, 24, 0.32);
-C(0, 40, 46, 24, 0.32);
-C(0, -215, 24, -7);
+C(0, 40, 46, 24, 0.32); Q(2);
+C(0, -215, 24, -7); Q(1);
 C(0, 172, 30, -6);
 for (const s of [-1, 1]) {
   C(62 * s, -168, 34);
   C(64 * s, -28, 31, s < 0 ? 15 : 0, 0.4);
   C(64 * s, 105, 32, s > 0 ? 14 : 0, 0.42);
-  C(118 * s, -95, 29);
-  C(122 * s, 40, 30, s > 0 ? 13 : 0, 0.0);
+  C(118 * s, -95, 29); Q(1);
+  C(122 * s, 40, 30, s > 0 ? 13 : 0, 0.0); Q(3);
   C(58 * s, 182, 24);
   C(150 * s, -25, 15, -6);
   C(186 * s, -25, 13, -5);
@@ -478,17 +492,17 @@ C(-60, -335, 26, 12, 0.45); CC(-60, -335, -52, -285, 10);     // top pin
 C(0, -268, 16, -6);
 
 // dark shell bubbles
-for (const y of [-260, -143, -25, 93]) S(-225, y, 56, y === -143 ? 2 : y === 93 ? 3 : 1);
-for (const y of [-25, 93]) S(247, y, 54, y === 93 ? 2 : 1);
+for (const y of [-260, -143, -25, 93]) { S(-225, y, 56, y === -143 ? 2 : y === 93 ? 3 : 1); if (y === -143) Q(3); }
+for (const y of [-25, 93]) { S(247, y, 54, y === 93 ? 2 : 1); if (y === 93) Q(2); }
 S(247, 325, 52, 2);
 S(129, -262, 40, 1);
 S(-48, -262, 34, 0);
 S(-348, 215, 46, 0);
-S(12, 450, 54, 1);
+S(12, 450, 54, 1); Q(2);
 S(292, -88, 46, 1);
 SC(292, -88, 410, -70, 26, 0);
-S(190, -330, 46, 0);
-S(-120, 300, 40, 0);
+S(190, -330, 46, 0); Q(1);
+S(-120, 300, 40, 0); Q(3);
 S(140, 270, 44, 1);
 
 // standalone pills + lines
@@ -508,11 +522,12 @@ for (let i = 0; nodes.length < N; i++) {
   const r = isCore ? 11 + rnd() * 15 : 28 + rnd() * 22;
   const hole = isCore && rnd() < 0.35 ? -(3 + rnd() * 3) : 0;
   const flag = isCore ? 0 : [0, 1, 1, 2, 3][Math.floor(rnd() * 5)];
+  const sq = rnd() < 0.35 ? 1 + Math.floor(rnd() * 3) : 0;
   for (const s of [-1, 1]) {
     if (nodes.length >= N) break;
     add(isCore ? 0 : 1, x * s, y, x * s, y, r, hole, flag);
     const n = nodes[nodes.length - 1];
-    n.pri = 10000 + i * 10; n.s = 0; n.vis = false;
+    n.pri = 10000 + i * 10; n.s = 0; n.vis = false; n.sq = sq;
   }
 }
 // lowest priority first: outer decoration goes before the central goo
@@ -521,53 +536,118 @@ function setCount(c) { ranked.forEach((n, i) => { n.vis = i < c; }); }
 setCount(BASE);
 
 // ---------- layouts to morph between ----------
+// Shape layouts remap each element's rest position radially: its distance from the centre
+// (normalised to the composition's tall oval) is kept, but measured in a square / diamond
+// norm instead of a circle, so the whole field reads as that shape. Shells and perimeter
+// glyphs are also pulled toward a common band so the outline is legible. LOOSE < 1 keeps
+// some of the original roundness.
+const NX = 360, NY = 420, LOOSE = 0.92;
+function shapeTo(n, norm, S) {
+  const nx = n.rax / NX, ny = n.ray / NY;
+  const rho = Math.hypot(nx, ny) || 1e-6;
+  const rb = n.band ? rho + (n.bandR - rho) * n.band : rho;
+  const k = rb / Math.max(norm(nx, ny), 1e-6);
+  const cx = nx / rho * rb, cy = ny / rho * rb; // same band, still round
+  const sc = n.layer === 0 ? S * 0.82 : S; // the goo core stays tight enough to merge
+  return { x: (cx + (nx * k - cx) * LOOSE) * sc, y: (cy + (ny * k - cy) * LOOSE) * sc, a: 0 };
+}
 const layouts = [
+  // 0 centred: the original composition
   n => ({ x: n.rax, y: n.ray, a: 0 }),
-  n => { // bloom: core spreads, shell pulls in
-    const f = n.layer === 0 ? 1.38 : n.layer === 1 ? 0.82 : 1.1;
-    return { x: n.rax * f, y: n.ray * (n.layer === 0 ? 1.08 : 0.9), a: 0 };
-  },
-  n => { // twist: rotate more near centre
+  // 1 square
+  n => shapeTo(n, (x, y) => Math.max(Math.abs(x), Math.abs(y)), 400),
+  // 2 about: the twist, rotating more near the centre
+  n => {
     const r = Math.hypot(n.rax, n.ray);
     const a = 1.1 * Math.max(0, 1 - r / 520);
     const c = Math.cos(a), s = Math.sin(a);
     return { x: n.rax * c - n.ray * s, y: n.rax * s + n.ray * c, a };
   },
-  n => { // squeeze: tall + narrow
-    return { x: n.rax * 0.62, y: n.ray * 1.18 + (n.layer === 1 ? Math.sign(n.rax) * 20 : 0), a: 0 };
+  // 3 diamond
+  n => shapeTo(n, (x, y) => Math.abs(x) + Math.abs(y), 470),
+  // 4 cylinder: x wraps around a vertical drum (sin bunches shapes at the walls), the ends
+  // bow like ellipses, and the drum slowly turns back and forth
+  n => {
+    const nx = n.rax / NX, ny = n.ray / NY;
+    let ax = Math.min(Math.abs(nx), 1.2);
+    if (n.band) ax += (0.95 - ax) * n.band;
+    const phi = Math.sign(nx) * Math.min(ax * 1.25, 1.52) + (reduce ? 0 : 0.18 * Math.sin(time * 0.35));
+    const x = 235 * Math.sin(phi);
+    const y = ny * 440 + Math.cos(phi) * 38 * Math.max(-1, Math.min(1, ny * 1.4));
+    return { x, y, a: 0 };
   },
 ];
+const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder'];
+// background orbit lines take the layout's shape too: weights for circle, square, diamond, drum
+const LAYOUT_ORB = [[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
 let from = 0, to = 0, morphT = 1;
+const morphBtn = document.getElementById('morph');
 
-// plus marks: thin registration crosses scattered through the field
-const pluses = [];
+// ---------- glyphs: the Illustrator shape sheet, rebuilt as SDFs ----------
+// t: 0 plus, 1 bar, 2 box (p = corner: 0 sharp .. 1 circle). For plus/bar p = thickness / size.
+// fill: 0 none (transparent middle), 1 black, 2 white. sw: stroke weight 0-3 (white).
+// inner: 0 none, 1 thick contrast ring, 2 small square, 3 dot, 4 thin inset line (f=1 → centre line)
+const GLYPHS = [
+  { t: 0, p: 0.09, fill: 2, sw: 0, inner: 0, f: 0, size: [14, 26] },   // thin plus
+  { t: 2, p: 0.18, fill: 2, sw: 0, inner: 1, f: 0.4, size: [13, 24] }, // white square, black square ring
+  { t: 0, p: 0.2, fill: 0, sw: 1, inner: 4, f: 1, size: [18, 30] },    // outline plus with centre line
+  { t: 2, p: 1, fill: 1, sw: 1, inner: 3, f: 0.14, size: [12, 22] },   // outlined circle, white dot
+  { t: 1, p: 0.16, fill: 0, sw: 1, inner: 4, f: 1, size: [30, 70] },   // outline bar with centre line
+  { t: 2, p: 0.1, fill: 2, sw: 0, inner: 2, f: 0.22, size: [12, 22] }, // white square, black square
+  { t: 2, p: 1, fill: 2, sw: 0, inner: 0, f: 0, size: [3, 6] },        // white dot
+  { t: 0, p: 0.28, fill: 1, sw: 3, inner: 0, f: 0, size: [14, 24] },   // chunky outlined plus
+  { t: 2, p: 1, fill: 2, sw: 0, inner: 1, f: 0.42, size: [12, 22] },   // white ring
+  { t: 2, p: 0.18, fill: 1, sw: 1, inner: 4, f: 0.38, size: [12, 22] },// double-outline square
+  { t: 2, p: 0.5, fill: 2, sw: 0, inner: 2, f: 0.22, size: [12, 22] }, // white squircle, black square
+  { t: 1, p: 0.2, fill: 1, sw: 3, inner: 0, f: 0, size: [24, 60] },    // thick-stroke bar
+  { t: 2, p: 1, fill: 0, sw: 1, inner: 0, f: 0, size: [5, 8] },        // small ring
+  { t: 2, p: 0.1, fill: 1, sw: 1, inner: 2, f: 0.14, size: [12, 22] }, // outlined square, white square
+  { t: 2, p: 1, fill: 1, sw: 1, inner: 4, f: 0.38, size: [12, 22] },   // double-outline circle
+  { t: 2, p: 1, fill: 2, sw: 0, inner: 3, f: 0.22, size: [12, 22] },   // white circle, black dot
+  { t: 2, p: 1, fill: 1, sw: 0, inner: 0, f: 0, size: [5, 9] },        // black dot
+  { t: 2, p: 0.3, fill: 1, sw: 1, inner: 2, f: 0.14, size: [12, 22] }, // outlined rounded square
+  { t: 0, p: 0.09, fill: 2, sw: 0, inner: 0, f: 0, size: [10, 18] },   // small thin plus
+  { t: 2, p: 0.5, fill: 1, sw: 1, inner: 2, f: 0.14, size: [12, 22] }, // outlined squircle
+  { t: 2, p: 1, fill: 2, sw: 0, inner: 0, f: 0, size: [2, 4] },        // pin dot
+  { t: 2, p: 0.3, fill: 2, sw: 0, inner: 2, f: 0.22, size: [12, 22] }, // white rounded square
+  { t: 0, p: 0.36, fill: 0, sw: 2, inner: 4, f: 1, size: [14, 22] },   // fat outline plus
+  { t: 1, p: 0.18, fill: 2, sw: 0, inner: 0, f: 0, size: [16, 34] },   // white bar
+];
+const glyphs = [];
 {
   let s2 = 99;
   const r2 = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
-  // style bits: 1 = white fill, 2 = white stroke, 4..12 = stroke weight; black-on-black is never picked
-  const style = () => {
-    const white = r2() < 0.5;
-    const strokeWhite = white ? r2() < 0.35 : true;
-    return (white ? 1 : 0) + (strokeWhite ? 2 : 0) + Math.floor(r2() * 4) * 4;
-  };
-  for (let i = 0; i < PN; i++) {
-    const x = (r2() * 2 - 1) * 430, y = (r2() * 2 - 1) * 470;
-    pluses.push({ rax: x, ray: y, layer: 1, x, y, vx: 0, vy: 0, size: 8 + r2() * 9, st: style(),
-      rot: 0, vr: 0, s: 0, vis: false, ph: r2() * 6.283, touch: false, lastT: 0, shockId: 0,
+  for (let i = 0; i < GN; i++) {
+    const g = GLYPHS[i % GLYPHS.length];
+    // 3 of every 5 ring the main form; the rest scatter, kept off the core
+    const perim = i % 5 < 3;
+    let x, y;
+    if (perim) {
+      const th = i * 2.39996 + r2() * 0.6, rho = 1.0 + r2() * 0.22;
+      x = Math.cos(th) * rho * NX; y = Math.sin(th) * rho * NY;
+    } else {
+      x = (r2() * 2 - 1) * 470; y = (r2() * 2 - 1) * 490;
+      if (Math.hypot(x / NX, y / NY) < 0.5) { x *= 2; y *= 2; }
+    }
+    const size = g.size[0] + r2() * (g.size[1] - g.size[0]);
+    const rot = g.t === 1 && r2() < 0.4 ? Math.PI / 2 : 0;
+    glyphs.push({ rax: x, ray: y, layer: 3, band: perim ? 0.6 : 0, bandR: 1.08, x, y, vx: 0, vy: 0,
+      size, g, st: g.fill + 4 * g.sw + 16 * g.inner,
+      rot, vr: 0, s: 0, vis: false, ph: r2() * 6.283, touch: false, lastT: 0, shockId: 0,
       w: 0.6, freq: noteFreq(Math.round((450 - y) / 900 * 12) + 5) });
   }
 }
-function setPlusCount(c) { pluses.forEach((q, i) => { q.vis = i < c; }); }
-setPlusCount(8);
+function setGlyphCount(c) { glyphs.forEach((q, i) => { q.vis = i < c; }); }
+setGlyphCount(Math.min(16, GN));
 
 // ---------- sections + floating labels ----------
 // Each label names a spot in the composition; it attaches to the nearest blob there.
 // Edit text / positions here.
 const SECTIONS = [
-  { name: 'Intro', title: 'A field that listens', labels: [['Scroll', 0, 262]] },
-  { name: 'Work', title: 'Selected work', labels: [['Motion', -62, -168], ['3D', 118, -95], ['Sound', -122, 40], ['Systems', 64, 105]] },
-  { name: 'About', title: 'How it’s made', labels: [['Studio', -225, -25], ['Process', 247, -25], ['Tools', -64, 105]] },
-  { name: 'Contact', title: 'Say hello', labels: [['Email', 62, -168], ['Instagram', -225, 93], ['Say hi', 0, 345]] },
+  { name: 'Intro', title: 'A field that listens', layout: 0, labels: [['Scroll', 0, 262]] },
+  { name: 'Work', title: 'Selected work', layout: 1, labels: [['Motion', -62, -168], ['3D', 118, -95], ['Sound', -122, 40], ['Systems', 64, 105]] },
+  { name: 'About', title: 'How it’s made', layout: 2, labels: [['Studio', -225, -25], ['Process', 247, -25], ['Tools', -64, 105]] },
+  { name: 'Contact', title: 'Say hello', layout: 3, labels: [['Email', 62, -168], ['Instagram', -225, 93], ['Say hi', 0, 345]] },
 ];
 // hover colours for the nav, in order: copper, yellow, green, cyan, lilac
 const NAV_COLORS = [[213, 143, 101], [229, 218, 73], [116, 210, 141], [121, 212, 236], [185, 157, 227]];
@@ -618,7 +698,7 @@ function setSection(i) {
   secEl.classList.remove('in'); void secEl.offsetWidth; secEl.classList.add('in');
   navBtns.forEach((b, j) => b.setAttribute('aria-current', String(j === i)));
   // each section has its own arrangement of the field
-  if (!first) { from = to; to = i % layouts.length; morphT = 0; morphSweep(to); }
+  if (!first) morphTo(SECTIONS[i].layout);
 }
 setSection(0);
 // higher on screen = higher note
@@ -635,8 +715,9 @@ uniform vec3 uMouse; uniform vec4 uShock; uniform float uK; uniform float uGlow;
 uniform float uContours; uniform float uSpacing; uniform float uFlash; uniform float uMirror;
 uniform vec3 uTint; uniform float uTintAmt; uniform float uInvert;
 uniform sampler2D uRD; uniform float uRDAmt;
-#define PN ${PN}
-uniform vec4 uPl[PN]; uniform int uPlCount;
+#define GN ${GN}
+uniform vec4 uGa[GN]; uniform vec4 uGb[GN]; uniform int uGCount;
+uniform vec4 uOrb; uniform float uDash;
 
 float sdSeg(vec2 p, vec2 a, vec2 b, float r){
   vec2 pa = p - a, ba = b - a;
@@ -649,15 +730,23 @@ float smin(float a, float b, float k){
 }
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 float sdBox(vec2 p, vec2 b){ vec2 d = abs(p) - b; return length(max(d, 0.)) + min(max(d.x, d.y), 0.); }
-// chunky rounded plus; z packs size (0-63) + 64 * style bits (fill, stroke colour, weight)
-float plusSD(vec4 Q, vec2 p, out float st){
-  st = floor(Q.z / 64.);
-  float sz = Q.z - st * 64.;
-  vec2 q = p - Q.xy;
-  float c = cos(Q.w), s = sin(Q.w);
+// circle → square family: cr is the corner radius as a fraction of r (1 = circle)
+float shp(vec2 q, float r, float cr){ return sdBox(q, vec2(r * (1. - cr))) - r * cr; }
+float cornerOf(float sq){ return sq < 0.5 ? 1. : sq < 1.5 ? 0.62 : sq < 2.5 ? 0.4 : 0.2; }
+// glyph a = (x, y, size, rot), b = (type, param, style bits, inner frac); returns local coords + minor half-extent
+float glyphSD(vec4 a, vec4 b, vec2 p, out vec2 q, out float mn){
+  q = p - a.xy;
+  float c = cos(a.w), s = sin(a.w);
   q = vec2(c * q.x + s * q.y, -s * q.x + c * q.y);
-  float arm = sz * 0.34, r = arm * 0.4;
-  return min(sdBox(q, vec2(sz, arm) - r), sdBox(q, vec2(arm, sz) - r)) - r;
+  float sz = a.z;
+  if (b.x < 0.5) { mn = sz * b.y; return min(sdBox(q, vec2(sz - mn, 0.)), sdBox(q, vec2(0., sz - mn))) - mn; }
+  if (b.x < 1.5) { mn = sz * b.y; return sdBox(q, vec2(sz - mn, 0.)) - mn; }
+  mn = sz; return shp(q, sz, b.y);
+}
+// dash mask along a closed curve, parameterised by angle × radius (≈ arc length)
+float dashes(vec2 q, float r, float len){
+  float t = fract(atan(q.y, q.x) * r / len);
+  return smoothstep(0., 0.06, t) * (1. - smoothstep(0.5, 0.56, t));
 }
 
 vec3 scene(vec2 p){
@@ -682,18 +771,20 @@ vec3 scene(vec2 p){
   for (int i = 0; i < N; i++) {
     if (i >= uCount) break;
     vec4 A = uA[i], B = uB[i];
-    float d = sdSeg(p, A.xy, B.xy, A.z);
-    float lc = length(p - A.xy);
-    if (B.w < 0.5) {
+    // B.w packs layer + 4 * squareness
+    float lay = mod(B.w, 4.), cr = cornerOf(floor(B.w / 4.));
+    vec2 lq = p - A.xy;
+    float d = cr > 0.99 ? sdSeg(p, A.xy, B.xy, A.z) : shp(lq, A.z * 0.92, cr);
+    if (lay < 0.5) {
       core = smin(core, d, k);
       shell = smin(shell, d - A.z * 0.3 - 16., k * 2.2);
-      if (B.z > 0.) { holes = min(holes, lc - B.z); if (A.w > 0.) dots = min(dots, lc - B.z * A.w); }
-      else if (B.z < 0.) holes = min(holes, lc + B.z);
-    } else if (B.w < 1.5) {
+      if (B.z > 0.) { holes = min(holes, shp(lq, B.z, cr)); if (A.w > 0.) dots = min(dots, shp(lq, B.z * A.w, cr)); }
+      else if (B.z < 0.) holes = min(holes, shp(lq, -B.z, cr));
+    } else if (lay < 1.5) {
       shell = smin(shell, d, k * 2.2);
-      if (A.w > 0.5 && A.w < 1.5) dots = min(dots, lc - 3.5);
-      else if (A.w > 1.5 && A.w < 2.5) dim = min(dim, lc - A.z * 0.42);
-      else if (A.w > 2.5) { rings = min(rings, abs(lc - A.z * 0.42) - 1.2); dots = min(dots, lc - A.z * 0.2); }
+      if (A.w > 0.5 && A.w < 1.5) dots = min(dots, shp(lq, 3.5, cr));
+      else if (A.w > 1.5 && A.w < 2.5) dim = min(dim, shp(lq, A.z * 0.42, cr));
+      else if (A.w > 2.5) { rings = min(rings, abs(shp(lq, A.z * 0.42, cr)) - 1.2); dots = min(dots, shp(lq, A.z * 0.2, cr)); }
     } else {
       if (A.w > 0.5) { pillF = min(pillF, d); if (B.z > 0.) slotD = min(slotD, sdSeg(p, A.xy, B.xy, B.z)); }
       else { pillO = min(pillO, d); if (B.z > 0.) slotW = min(slotW, sdSeg(p, A.xy, B.xy, B.z)); }
@@ -717,15 +808,21 @@ vec3 scene(vec2 p){
     col = mix(col, vec3(0.16, 0.165, 0.165), rdm * uRDAmt);
   }
 
-  // orbit lines behind everything
-  vec2 oc = p - vec2(20., 10.);
-  float ol = length(oc);
+  // orbit lines behind everything: heavy → hairline, then a dashed one (like the line sheet).
+  // Their metric blends circle / square / diamond / drum with the current layout.
+  vec2 oc = p - vec2(20., 10.) * uOrb.x;
+  vec2 ao = abs(oc);
+  float ol = uOrb.x * length(oc) + uOrb.y * max(ao.x, ao.y) * 1.02
+           + uOrb.z * (ao.x + ao.y) * 0.8 + uOrb.w * max(ao.x * 1.5, ao.y * 0.78);
   float orbit = 0.;
-  for (int j = 0; j < 3; j++) {
-    float r = 300. + float(j) * 34.;
-    orbit = max(orbit, 1. - smoothstep(0., px * 1.2, abs(ol - r)));
+  for (int j = 0; j < 4; j++) {
+    float r = 300. + float(j) * 26.;
+    float w = j == 0 ? 2.4 : j == 1 ? 1.2 : j == 2 ? 0.5 : 0.8;
+    float l = 1. - smoothstep(0., px * 1.1, abs(ol - r) - w * 0.5);
+    if (j == 3) l *= mod(uDash, 4.) > 1.5 ? dashes(oc, ol, 11.) : 0.;
+    orbit = max(orbit, l);
   }
-  col = mix(col, vec3(0.5), orbit * 0.22);
+  col = mix(col, vec3(0.62), orbit * 0.32);
 
   // shell: dark fill + thin outline
   float sf = 1. - smoothstep(-aa, aa, shell);
@@ -738,16 +835,18 @@ vec3 scene(vec2 p){
   for (int j = 0; j < 16; j++) {
     if (float(j) >= uContours) break;
     float off = float(j + 1) * uSpacing;
-    float cl = 1. - smoothstep(0., px * 1.2, abs(shell - off) - px * 0.25);
+    float w = j == 0 ? 1.1 : j == 1 ? 0.55 : 0.25;
+    float cl = 1. - smoothstep(0., px * 1.2, abs(shell - off) - max(w, px * 0.25));
+    if (j == 1 && mod(uDash, 2.) > 0.5) cl *= dashes(p, length(p), 10.);
     col = mix(col, vec3(0.72), cl * 0.5 * (1. - float(j) / (uContours + 1.)));
   }
 
-  // white-filled pluses feed the glow
-  float pmW = 1e5, stTmp;
-  for (int i = 0; i < PN; i++) {
-    if (i >= uPlCount) break;
-    float d = plusSD(uPl[i], p, stTmp);
-    if (mod(stTmp, 2.) > 0.5) pmW = min(pmW, d);
+  // white-filled glyphs feed the glow
+  float pmW = 1e5;
+  for (int i = 0; i < GN; i++) {
+    if (i >= uGCount) break;
+    vec2 gq; float gm;
+    if (mod(uGb[i].z, 4.) > 1.5) pmW = min(pmW, glyphSD(uGa[i], uGb[i], p, gq, gm));
   }
   col = mix(col, vec3(0.85), (1. - smoothstep(-aa, aa, rings)) * 0.85);
 
@@ -765,15 +864,26 @@ vec3 scene(vec2 p){
   col = mix(col, vec3(0.92), (1. - smoothstep(0., px * 1.4, abs(pillO) - px * 0.5)));
   col = mix(col, vec3(0.94), 1. - smoothstep(-aa, aa, slotW));
 
-  // chunky pluses: black or white fill, black or white inner stroke, 1-4px
-  for (int i = 0; i < PN; i++) {
-    if (i >= uPlCount) break;
-    float st;
-    float d = plusSD(uPl[i], p, st);
-    float fillW = mod(st, 2.), strokeW = mod(floor(st / 2.), 2.), wt = floor(st / 4.) + 1.;
-    col = mix(col, fillW > 0.5 ? vec3(0.94) : vec3(0.085), 1. - smoothstep(-aa, aa, d));
-    float sw = wt * px * 1.3;
-    col = mix(col, strokeW > 0.5 ? vec3(0.92) : vec3(0.05), 1. - smoothstep(0., aa, abs(d + sw * 0.5) - sw * 0.5));
+  // glyphs: fill (none / black / white), white stroke, then a contrasting inner mark
+  for (int i = 0; i < GN; i++) {
+    if (i >= uGCount) break;
+    vec4 gb = uGb[i];
+    vec2 q; float mn;
+    float d = glyphSD(uGa[i], gb, p, q, mn);
+    if (d > 6.) continue;
+    float fill = mod(gb.z, 4.), sw = mod(floor(gb.z / 4.), 4.), inner = floor(gb.z / 16.);
+    vec3 cc = fill > 1.5 ? vec3(0.035) : vec3(0.94); // contrast colour for the inner mark
+    if (fill > 0.5) col = mix(col, fill > 1.5 ? vec3(0.94) : vec3(0.035), 1. - smoothstep(-aa, aa, d));
+    float w = sw * 1.1;
+    if (sw > 0.5) col = mix(col, vec3(0.93), 1. - smoothstep(-aa, aa, abs(d + w * 0.5) - w * 0.5));
+    if (inner > 0.5) {
+      float di;
+      if (inner < 1.5) di = abs(d + gb.w * mn) - mn * 0.1;
+      else if (inner < 2.5) di = sdBox(q, vec2(mn * gb.w));
+      else if (inner < 3.5) di = length(q) - mn * gb.w;
+      else di = abs(d + gb.w * mn) - max(w, 1.) * 0.5;
+      col = mix(col, cc, 1. - smoothstep(-aa, aa, di));
+    }
   }
 
   // core goo
@@ -860,10 +970,10 @@ const loc = gl.getAttribLocation(prog, 'p');
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 const U = {};
-for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uPl', 'uPlCount', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt'])
+for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt'])
   U[n] = gl.getUniformLocation(prog, n);
 const arrA = new Float32Array(N * 4), arrB = new Float32Array(N * 4);
-const arrP = new Float32Array(PN * 4);
+const arrGa = new Float32Array(GN * 4), arrGb = new Float32Array(GN * 4);
 
 // ---------- sizing ----------
 let W = 0, H = 0, dpr = 1, scale = 1;
@@ -1051,6 +1161,13 @@ for (const m of ['attract', 'repel', 'blob']) {
   });
 }
 const morphClick = document.getElementById('morphclick');
+let dashMode = 1;
+const dashBtns = [...document.querySelectorAll('[data-dash]')];
+for (const b of dashBtns) b.addEventListener('click', () => {
+  dashMode = +b.dataset.dash;
+  dashBtns.forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  tick(noteFreq(8 + dashMode), 0, 0.04, 'square', 0.05);
+});
 const invertBtn = document.getElementById('invert');
 let invert = false, invAmt = 0;
 function setInvert(on) {
@@ -1085,8 +1202,9 @@ countEl.max = String(nodes.length);
 countEl.value = String(BASE); countO.textContent = BASE;
 let lastCount = BASE;
 const plusEl = document.getElementById('plus'), plusO = document.getElementById('plus-o');
+plusEl.max = String(GN); plusEl.value = String(Math.min(16, GN)); plusO.textContent = plusEl.value;
 plusEl.addEventListener('input', () => {
-  setPlusCount(+plusEl.value); plusO.textContent = plusEl.value;
+  setGlyphCount(+plusEl.value); plusO.textContent = plusEl.value;
   tick(noteFreq(+plusEl.value + 8), 0, 0.04, 'square', 0.05);
 });
 countEl.addEventListener('input', () => {
@@ -1095,10 +1213,13 @@ countEl.addEventListener('input', () => {
   if (c !== lastCount) tick(noteFreq(Math.round(c / 6)), 0, 0.05);
   lastCount = c;
 });
-function morph() {
-  from = to; to = (to + 1) % layouts.length; morphT = 0;
+function morphTo(i) {
+  if (i === to && morphT >= 1) return;
+  from = to; to = i; morphT = 0;
   morphSweep(to);
+  morphBtn.textContent = 'Morph · ' + LAYOUT_NAMES[to];
 }
+function morph() { morphTo((to + 1) % layouts.length); }
 const vol = document.getElementById('vol'), volO = document.getElementById('vol-o');
 vol.addEventListener('input', () => {
   A.vol = +vol.value / 100; volO.textContent = vol.value;
@@ -1113,8 +1234,8 @@ soundBtn.addEventListener('click', () => {
   soundBtn.setAttribute('aria-pressed', String(A.on));
   soundBtn.textContent = A.on ? 'Sound on' : 'Sound off';
 });
-document.getElementById('morph').addEventListener('click', () => { audioInit(); morph(); });
-document.getElementById('reset').addEventListener('click', () => { from = to; to = 0; morphT = 0; });
+morphBtn.addEventListener('click', () => { audioInit(); morph(); });
+document.getElementById('reset').addEventListener('click', () => morphTo(0));
 addEventListener('keydown', e => {
   if (e.code === 'Space' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) {
     e.preventDefault(); morph();
@@ -1157,6 +1278,15 @@ addEventListener('pointerup', () => { mouse.down = false; });
 // ---------- sim ----------
 const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 let last = performance.now(), time = 0;
+// ?layout=1..4 opens straight into that formation (handy for sharing one)
+{
+  const L = +new URLSearchParams(location.search).get('layout');
+  if (L > 0 && L < layouts.length) {
+    from = to = L;
+    morphBtn.textContent = 'Morph · ' + LAYOUT_NAMES[L];
+    for (const n of [...nodes, ...glyphs]) { const t = layouts[L](n); n.x = t.x; n.y = t.y; n.ang = t.a; }
+  }
+}
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 1 / 30); last = now; time += dt;
   setSection(Math.max(0, Math.min(SECTIONS.length - 1, Math.round(scrollY / innerHeight))));
@@ -1208,7 +1338,7 @@ function frame(now) {
   }
 
   // plus marks: same springs as the shapes, and they spin when the pulse hits, snapping back to square
-  for (const q of pluses) {
+  for (const q of glyphs) {
     q.s += ((q.vis ? 1 : 0) - q.s) * (1 - Math.exp(-dt * 6));
     const a = layouts[from](q), b = layouts[to](q);
     let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
@@ -1266,7 +1396,7 @@ function frame(now) {
 
   if (live() && mouse.r > 4) {
     const tnow = A.ctx.currentTime;
-    for (const q of pluses) {
+    for (const q of glyphs) {
       if (q.s < 0.5) { q.touch = false; continue; }
       const d = Math.hypot(q.x - mouse.x, q.y - mouse.y) - q.size - mouse.r;
       if (!q.touch && d < 4) {
@@ -1331,7 +1461,7 @@ function frame(now) {
     const lab = n.lab || 0;
     const flag = n.layer === 0 ? n.flag * (1 - lab) : n.layer === 1 && lab > 0.5 ? 0 : n.flag;
     arrA.set([n.x, n.y, n.r * e * (1 + 0.22 * lab), flag], count * 4);
-    arrB.set([n.x + ox, n.y + oy, n.hole * e * (1 - lab), n.layer], count * 4);
+    arrB.set([n.x + ox, n.y + oy, n.hole * e * (1 - lab), n.layer + 4 * n.sq], count * 4);
     count++;
   }
   gl.uniform2f(U.uRes, W, H);
@@ -1341,13 +1471,18 @@ function frame(now) {
   gl.uniform4fv(U.uB, arrB);
   gl.uniform1i(U.uCount, count);
   let pc = 0;
-  for (const q of pluses) {
+  for (const q of glyphs) {
     if (q.s < 0.01) continue;
-    arrP.set([q.x, q.y, Math.min(q.size * q.s, 63) + 64 * q.st, q.rot], pc * 4);
+    arrGa.set([q.x, q.y, q.size * q.s, q.rot], pc * 4);
+    arrGb.set([q.g.t, q.g.p, q.st, q.g.f], pc * 4);
     pc++;
   }
-  gl.uniform4fv(U.uPl, arrP);
-  gl.uniform1i(U.uPlCount, pc);
+  gl.uniform4fv(U.uGa, arrGa);
+  gl.uniform4fv(U.uGb, arrGb);
+  gl.uniform1i(U.uGCount, pc);
+  const oa = LAYOUT_ORB[from], ob = LAYOUT_ORB[to];
+  gl.uniform4f(U.uOrb, ...oa.map((v, j) => v + (ob[j] - v) * m));
+  gl.uniform1f(U.uDash, dashMode);
   gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
   gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
   gl.uniform1f(U.uK, Math.max(P_.k, 0.5));
