@@ -195,7 +195,8 @@ body.in-caps .panel, body.in-caps .scope { opacity: 0; pointer-events: none; }
   --f-galix: "Galix Mono", var(--mono);
 }
 .sections section.caps { height: auto; min-height: 100vh; padding-bottom: 96px; }
-.caps-hero { min-height: min(726px, 90vh); padding: 96px 24px 0; box-sizing: border-box; }
+.caps-hero { min-height: 410px; padding: 96px 24px 0; box-sizing: border-box; }
+.caps-hero h2.goo { color: transparent; }
 .caps-hero h2 {
   margin: 0; font-family: var(--f-loos-x); font-weight: 700; font-size: clamp(44px, 6.7vw, 96px);
   line-height: 1; color: #fff; letter-spacing: 0;
@@ -1135,6 +1136,8 @@ uniform vec3 uMouse; uniform vec4 uShock; uniform float uK; uniform float uGlow;
 uniform float uContours; uniform float uSpacing; uniform float uFlash; uniform float uMirror;
 uniform vec3 uTint; uniform float uTintAmt; uniform float uInvert;
 uniform sampler2D uRD; uniform float uRDAmt; uniform float uWork;
+// heading-as-goo: r = sharp glyphs, g = small blur (shape), b = wide blur (reach for bridging)
+uniform sampler2D uText; uniform vec4 uTextRect; uniform vec2 uTextSig; uniform float uTextAmt;
 #define GN ${GN}
 uniform vec4 uGa[GN]; uniform vec4 uGb[GN]; uniform int uGCount;
 uniform vec4 uOrb; uniform float uDash;
@@ -1215,6 +1218,21 @@ vec3 scene(vec2 p){
     float dm = length(pr - uMouse.xy) - uMouse.z;
     core = smin(core, dm, k * 1.2);
     shell = smin(shell, dm - 22., k * 2.2);
+  }
+  // the capabilities heading joins the goo: distance comes from its blurred glyph texture, so
+  // blobs and the cursor bridge into the letters and the contours wrap the word
+  if (uTextAmt > 0.001) {
+    vec2 tuv = (pr - uTextRect.xy) / uTextRect.zw;
+    if (tuv.x > 0. && tuv.x < 1. && tuv.y > 0. && tuv.y < 1.) {
+      vec3 t = texture2D(uText, tuv).rgb;
+      if (t.b > 0.02) {
+        float dS = uTextSig.x * 2.5 * (0.5 - t.g);
+        float dR = uTextSig.y * 2.5 * (0.5 - t.b);
+        float dt = (t.g > 0.15 ? dS : max(dS, dR)) + (1. - uTextAmt) * 120.;
+        core = smin(core, dt, k);
+        shell = smin(shell, dt - 16. * (1. - uWork), k * 2.2);
+      }
+    }
   }
   float coreCut = max(core, -holes);
 
@@ -1391,7 +1409,7 @@ const loc = gl.getAttribLocation(prog, 'p');
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 const U = {};
-for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork'])
+for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork', 'uText', 'uTextRect', 'uTextSig', 'uTextAmt'])
   U[n] = gl.getUniformLocation(prog, n);
 const arrA = new Float32Array(N * 4), arrB = new Float32Array(N * 4);
 const arrGa = new Float32Array(GN * 4), arrGb = new Float32Array(GN * 4);
@@ -1556,6 +1574,70 @@ const rd = (() => {
 })();
 let rdTimer = 0;
 addEventListener('resize', () => { clearTimeout(rdTimer); rdTimer = setTimeout(() => rd && rd.rebuild(), 150); });
+// ---------- heading as goo ----------
+// The h2 is rasterised (same computed font) into a texture: sharp glyphs in red, a 3px blur in
+// green for the letter shapes and an 18px blur in blue so the field can reach out and bridge in.
+// Needs canvas filters; without them the DOM heading simply stays visible.
+const goohead = (() => {
+  const h2 = capsSec.querySelector('h2');
+  const cv = document.createElement('canvas');
+  const cx = cv.getContext('2d');
+  if (!h2 || !cx || !('filter' in cx)) return null;
+  const SIG1 = 3, SIG2 = 18, PAD = 3 * SIG2 + 6; // css px
+  const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.activeTexture(gl.TEXTURE0);
+  let box = null; // css size of the text box the texture was built for
+  function build() {
+    const st = getComputedStyle(h2);
+    const range = document.createRange(); range.selectNodeContents(h2);
+    const r = range.getBoundingClientRect(); // the glyphs, not the full-width block
+    if (r.width < 1) return;
+    const k = Math.min(devicePixelRatio || 1, 2);
+    const w = Math.ceil((r.width + 2 * PAD) * k), h = Math.ceil((r.height + 2 * PAD) * k);
+    cv.width = w; cv.height = h;
+    cx.fillStyle = '#000'; cx.fillRect(0, 0, w, h);
+    cx.globalCompositeOperation = 'lighter';
+    cx.font = `${st.fontWeight} ${parseFloat(st.fontSize) * k}px ${st.fontFamily}`;
+    cx.textBaseline = 'top';
+    const draw = (color, blur) => {
+      cx.filter = blur ? `blur(${blur * k}px)` : 'none';
+      cx.fillStyle = color;
+      // nudge so the canvas glyph top matches the DOM line box
+      cx.fillText(h2.textContent, PAD * k, PAD * k + (r.height - parseFloat(st.fontSize)) * 0.5 * k);
+    };
+    draw('#f00', 0); draw('#0f0', SIG1); draw('#00f', SIG2);
+    cx.filter = 'none'; cx.globalCompositeOperation = 'source-over';
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    gl.activeTexture(gl.TEXTURE0);
+    box = { w: r.width, h: r.height };
+    h2.classList.add('goo');
+  }
+  build();
+  document.fonts?.ready.then(build).catch(() => {});
+  addEventListener('resize', () => setTimeout(build, 60));
+  return {
+    // world-space rect of the texture + how much of it to show
+    frame() {
+      if (!box) return null;
+      const range = document.createRange(); range.selectNodeContents(h2);
+      const r = range.getBoundingClientRect();
+      if (r.bottom < -PAD || r.top > innerHeight + PAD) return null;
+      const u = dpr / scale;
+      return { x: ((r.left - PAD) * dpr - W / 2) / scale, y: ((r.top - PAD) * dpr - H / 2) / scale,
+        w: (box.w + 2 * PAD) * u, h: (box.h + 2 * PAD) * u, s1: SIG1 * u, s2: SIG2 * u, tex };
+    },
+  };
+})();
+
 // world (y down) -> sim uv (y up)
 const worldToUv = (x, y) => [(x * scale + W / 2) / W, 1 - (y * scale + H / 2) / H];
 
@@ -2008,6 +2090,16 @@ function frame(now) {
     gl.bindTexture(gl.TEXTURE_2D, rd.tex());
   }
   gl.useProgram(prog);
+  const gh = goohead && goohead.frame();
+  gl.uniform1i(U.uText, 1);
+  gl.uniform1f(U.uTextAmt, gh ? 1 : 0);
+  if (gh) {
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, gh.tex);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform4f(U.uTextRect, gh.x, gh.y, gh.w, gh.h);
+    gl.uniform2f(U.uTextSig, gh.s1, gh.s2);
+  }
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
