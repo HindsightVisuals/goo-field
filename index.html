@@ -57,7 +57,7 @@ body {
   overflow-x: hidden;
 }
 /* invisible scroll track: one screen per section, the field stays fixed behind */
-.sections section { height: 100vh; height: 100svh; }
+.sections section { height: 100vh; height: 100lvh; } /* lvh: with the address bar tucked away, the footer still starts below the screen */
 .sections section[hidden] { display: none; } /* one page at a time, picked by the nav */
 /* sections sit above the fixed canvas for their content, but let the field keep the pointer */
 .sections { position: relative; z-index: 1; pointer-events: none; }
@@ -2940,6 +2940,7 @@ function showPage(si) {
   if (goohead && !capsSec.hidden) goohead.build();
   smoothTo(0, { immediate: true });
   setSection(si); // morphs the field to the page's layout
+  footUnderNav();
 }
 async function goPage(si, { push = true } = {}) {
   if (paging) return;
@@ -2950,7 +2951,7 @@ async function goPage(si, { push = true } = {}) {
   // the field morphs straight away; the page content steps out, swaps under cover, and steps back in
   if (fade) await new Promise(res => gsap.to(fade, { opacity: 0, y: -24, duration: 0.3, ease: 'power2.in', overwrite: true, onComplete: res }));
   showPage(si);
-  if (fade) gsap.fromTo(fade, { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out', overwrite: true, clearProps: 'transform,opacity' });
+  if (fade) gsap.fromTo(fade, { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out', overwrite: true, clearProps: 'transform,opacity', onComplete: footUnderNav }); // re-measured once it's settled
   paging = false;
 }
 goSection = async si => {
@@ -2995,12 +2996,17 @@ const mainFoot = document.getElementById('sitefoot').cloneNode(true);
 mainFoot.removeAttribute('id');
 mainFoot.classList.add('main-foot');
 sectionsEl.after(mainFoot);
-// the HUD would sit on top of the footer, so it steps aside while the footer's in view
-new IntersectionObserver(([e]) => document.body.classList.toggle('at-foot', e.isIntersecting)).observe(mainFoot);
+// the HUD would sit on top of the footer, so it steps aside once the footer reaches it — not merely when the footer
+// touches the screen edge, which on Home (one screen, then the footer) is from the very first frame
+const hudEl = document.querySelector('.hud');
 // and once its top reaches the nav's bottom edge, the nav takes a backing so the two don't overlap (measured
 // against the nav itself, since a fixed % band misses on short landscape screens)
 const navEl = document.querySelector('.nav');
-const footUnderNav = () => document.body.classList.toggle('foot-under-nav', mainFoot.getBoundingClientRect().top < navEl.offsetHeight);
+const footUnderNav = () => {
+  const top = mainFoot.getBoundingClientRect().top;
+  document.body.classList.toggle('at-foot', top < hudEl.getBoundingClientRect().bottom);
+  document.body.classList.toggle('foot-under-nav', top < navEl.offsetHeight);
+};
 addEventListener('scroll', footUnderNav, { passive: true });
 addEventListener('resize', footUnderNav);
 footUnderNav();
