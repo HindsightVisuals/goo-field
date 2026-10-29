@@ -2037,9 +2037,13 @@ let W = 0, H = 0, dpr = 1, scale = 1;
 // Render resolution: at most 1.5× the CSS size, and stepped down (never back up, so it can't oscillate) when the
 // GPU can't hold ~40fps — see the perf check in frame(). Phones are the usual case.
 const DPR_STEPS = [1.5, 1.25, 1, 0.8];
+// with a mouse it's a big screen, where 1× already means millions of pixels and the blur and glow hide the
+// difference — so desktops start at 1× and only phones (small screens, dense pixels) get the extra
+const DPR_MAX = matchMedia('(pointer: coarse)').matches ? 1.5 : 1;
+const dprAt = step => Math.min(window.devicePixelRatio || 1, DPR_MAX, DPR_STEPS[step]);
 let dprStep = 0;
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, DPR_STEPS[dprStep]);
+  dpr = dprAt(dprStep);
   const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
   // setting canvas.width clears and reallocates it, so only when something really changed
   if (w !== canvas.width || h !== canvas.height) { canvas.width = w; canvas.height = h; }
@@ -2073,9 +2077,9 @@ function perfCheck(rawDt) {
   }
   if (avg <= PERF_TARGET) return;
   // jump to the next step that actually lowers the resolution (on a 1× screen, 1.5 → 1.25 changes nothing)
-  const dev = window.devicePixelRatio || 1, cur = Math.min(dev, DPR_STEPS[dprStep]);
+  const cur = dprAt(dprStep);
   let next = dprStep + 1;
-  while (next < DPR_STEPS.length && Math.min(dev, DPR_STEPS[next]) >= cur) next++;
+  while (next < DPR_STEPS.length && dprAt(next) >= cur) next++;
   if (next >= DPR_STEPS.length) { perfDone = true; return; } // nothing lower to go to
   perfProbe = { from: dprStep, avg };
   dprStep = next; resize();
@@ -2901,6 +2905,7 @@ function swapContact(open) {
   morphTo(open ? 0 : SECTIONS[Math.max(0, section)].layout);
   emblem.el.setAttribute('aria-expanded', String(open));
   emblem.el.setAttribute('aria-label', open ? 'Close contact' : 'Contact');
+  footUnderNav(); // the canvas moves into the panel (or back), so the idle check has to look again
 }
 async function setContact(open, { focus = true } = {}) {
   if (open === contactOpen || wiping) return;
@@ -2999,13 +3004,16 @@ sectionsEl.after(mainFoot);
 // the HUD would sit on top of the footer, so it steps aside once the footer reaches it — not merely when the footer
 // touches the screen edge, which on Home (one screen, then the footer) is from the very first frame
 const hudEl = document.querySelector('.hud');
+let gooHidden = false; // the footer covers the whole screen: nothing to draw
 // and once its top reaches the nav's bottom edge, the nav takes a backing so the two don't overlap (measured
 // against the nav itself, since a fixed % band misses on short landscape screens)
 const navEl = document.querySelector('.nav');
 const footUnderNav = () => {
-  const top = mainFoot.getBoundingClientRect().top;
+  const { top, bottom } = mainFoot.getBoundingClientRect();
   document.body.classList.toggle('at-foot', top < hudEl.getBoundingClientRect().bottom);
   document.body.classList.toggle('foot-under-nav', top < navEl.offsetHeight);
+  // footer from the nav down to the bottom edge: the field's fully behind it, so the render loop idles
+  gooHidden = !contactOpen && top <= navEl.offsetHeight && bottom >= innerHeight;
 };
 addEventListener('scroll', footUnderNav, { passive: true });
 addEventListener('resize', footUnderNav);
@@ -3169,6 +3177,10 @@ contactEl.addEventListener('scroll', scrollClicker(() => contactEl.scrollTop), {
 const CORNER = [1, 0.62, 0.4, 0.2]; // sq → corner radius fraction
 const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 let last = performance.now(), time = 0, drift = 0; // drift: the idle wobble's own clock, which the contact form speeds up
+// 60fps at most: a 120/144Hz monitor would otherwise run the whole shader twice as often for no visible gain.
+// The slot carries over (rather than "16.7ms since the last frame") so a 144Hz screen still averages ~60.
+const FRAME_MS = 1000 / 60;
+let nextFrameAt = 0;
 // ?layout=1..4 opens straight into that formation (handy for sharing one)
 {
   const L = +new URLSearchParams(location.search).get('layout');
@@ -3179,6 +3191,8 @@ let last = performance.now(), time = 0, drift = 0; // drift: the idle wobble's o
   }
 }
 function frame(now) {
+  if (now < nextFrameAt - 1 || gooHidden) { requestAnimationFrame(frame); return; }
+  nextFrameAt = Math.max(nextFrameAt + FRAME_MS, now);
   const rawDt = (now - last) / 1000;
   const dt = Math.min(rawDt, 1 / 30); last = now; time += dt;
   perfCheck(rawDt);
