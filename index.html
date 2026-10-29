@@ -3256,24 +3256,31 @@ function frame(now) {
     // idle drift; tiles hold still in the grid so the margins stay true
     const dr = (n.tile >= 0 ? 1 - workAmt : 1) * 4 * (1 + 3 * orb) * (1 + 1.5 * fe); // and they bob more when weightless, or when the form is busy
     if (!reduce) { tx += Math.sin(drift * 0.7 + n.ph) * dr; ty += Math.cos(drift * 0.55 + n.ph * 1.3) * dr; }
-    let fx = (tx - n.x) * stiff, fy = (ty - n.y) * stiff;
+    // capability card tiles carry the DOM cards, so while they're cards they settle instead of bouncing: a firmer,
+    // nearly critically damped spring, and only a hint of the cursor's pull, the pulse and the drift
+    const calm = n.cap >= 0 ? capsAmt : 0;
+    if (calm > 0 && !reduce) { tx -= Math.sin(drift * 0.7 + n.ph) * dr * 0.8 * calm; ty -= Math.cos(drift * 0.55 + n.ph * 1.3) * dr * 0.8 * calm; }
+    const k = stiff * (1 + 1.5 * calm);
+    let fx = (tx - n.x) * k, fy = (ty - n.y) * k;
+    const pushes = 1 - 0.85 * calm;
 
-    if (mouse.inside && P_.mode !== 'blob') {
+    if (mouse.inside && P_.mode !== 'blob' && pushes > 0.02) {
       const dx = n.x - mouse.x, dy = n.y - mouse.y, d = Math.hypot(dx, dy) + 1e-3;
       const R = 170 + mouse.r * 2;
       const fall = Math.exp(-(d * d) / (R * R));
-      const s = 2600 * P_.force * fall * n.w * (mouse.down ? 1.6 : 1);
+      const s = 2600 * P_.force * fall * n.w * (mouse.down ? 1.6 : 1) * pushes;
       if (P_.mode === 'repel') { fx += dx / d * s; fy += dy / d * s; }
       else { const pull = d > 30 ? 1 : d / 30; fx -= dx / d * s * pull; fy -= dy / d * s * pull; }
     }
     if (shockAmp > 0.02) {
       const dx = n.x - shock.x, dy = n.y - shock.y, d = Math.hypot(dx, dy) + 1e-3;
       const band = Math.exp(-((d - shockR) ** 2) / 3000);
-      const s = 9000 * shockAmp * band * n.w;
+      const s = 9000 * shockAmp * band * n.w * pushes;
       fx += dx / d * s; fy += dy / d * s;
     }
+    const dmp = damp + (2 * Math.sqrt(k) * 0.95 - damp) * calm; // 0.95 of critical: settles with no visible overshoot
     n.vx += fx * dt; n.vy += fy * dt;
-    n.vx *= Math.exp(-damp * dt); n.vy *= Math.exp(-damp * dt);
+    n.vx *= Math.exp(-dmp * dt); n.vy *= Math.exp(-dmp * dt);
     n.x += n.vx * dt; n.y += n.vy * dt;
   }
 
