@@ -197,14 +197,14 @@ body.in-caps .panel, body.in-caps .scope { opacity: 0; pointer-events: none; }
 .sections section.caps { height: auto; min-height: 100vh; padding-bottom: 96px; }
 /* the heading pins to the top; each card pins below it, one step lower than the last, and the
    next card slides over it. --step is how much of a covered card stays visible. */
-.caps { --hero-h: calc(40px + clamp(44px, 6.7vw, 96px)); --step: 92px; }
+.caps { --hero-h: calc(40px + clamp(22px, 3.35vw, 48px)); --step: 108px; }
 .caps-hero { position: sticky; top: 0; padding: 24px 24px 16px; box-sizing: border-box; z-index: 1; }
 .caps-hero h2.goo { color: transparent; }
 .caps-hero h2 {
-  margin: 0; font-family: var(--f-loos-x); font-weight: 700; font-size: clamp(44px, 6.7vw, 96px);
+  margin: 0; font-family: var(--f-loos-x); font-weight: 700; font-size: clamp(22px, 3.35vw, 48px);
   line-height: 1; color: #fff; letter-spacing: 0;
 }
-.svc-list { display: grid; gap: 16px; padding: 0 48px 45vh; margin-top: 178px; position: relative; }
+.svc-list { display: grid; gap: 32px; padding: 0 48px 45vh; margin-top: 178px; position: relative; }
 .svc { position: sticky; top: calc(var(--hero-h) + var(--i) * var(--step)); }
 /* cards ride their shader tiles (transform set per frame); the gaps let the cursor reach the field */
 .svc { opacity: 0; will-change: transform, opacity; cursor: pointer; }
@@ -272,7 +272,7 @@ body.in-caps .panel, body.in-caps .scope { opacity: 0; pointer-events: none; }
 .svc-toggle:hover { background: color-mix(in srgb, var(--c) 30%, transparent); }
 .svc-toggle:focus-visible, .svc-meta .see:focus-visible { outline: 1px solid var(--c); outline-offset: 3px; }
 @media (max-width: 700px) {
-  .caps { --step: 56px; }
+  .caps { --step: 72px; }
   .svc-list { padding: 0 16px 45vh; margin-top: 120px; }
   .svc-id { flex-basis: 40px; padding: 6px; }
   .svc-id span { font-size: 16px; }
