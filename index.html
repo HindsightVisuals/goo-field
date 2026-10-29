@@ -1,7 +1,7 @@
 <title>Goo Field</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Krona+One&display=swap">
 <style>
 /* Layout: full-bleed WebGL field, a quiet HUD top-left, a compact instrument panel bottom-left. Single dark look by choice. */
 :root {
@@ -32,6 +32,10 @@ body {
 }
 /* invisible scroll track: one screen per section, the field stays fixed behind */
 .sections section { height: 100vh; height: 100svh; }
+/* sections sit above the fixed canvas for their content, but let the field keep the pointer */
+.sections { position: relative; z-index: 1; pointer-events: none; }
+.hud, .secnav, .panel, .scope, .filters { z-index: 2; }
+.sections .caps-hero h2, .sections .svc-list { pointer-events: auto; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 .label {
@@ -179,7 +183,98 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 .filters button:disabled { opacity: 0.28; cursor: not-allowed; }
 .filters .clear { border-style: dashed; }
 .hud { transition: opacity 0.35s ease; }
-body.in-work .hud { opacity: 0; }
+body.in-work .hud, body.in-caps .hud { opacity: 0; }
+/* the cards need the whole width: the controls and scope step aside while you read them */
+.panel, .scope { transition: opacity 0.35s ease; }
+body.in-caps .panel, body.in-caps .scope { opacity: 0; pointer-events: none; }
+
+/* ---------- capabilities (Figma: Design System › Frame 109, Service Card set) ---------- */
+:root {
+  --f-loos-x: "Loos Extended", "Krona One", system-ui, sans-serif;
+  --f-loos-w: "Loos Wide", "Krona One", system-ui, sans-serif;
+  --f-galix: "Galix Mono", var(--mono);
+}
+.sections section.caps { height: auto; min-height: 100vh; padding-bottom: 96px; }
+.caps-hero { min-height: min(726px, 90vh); padding: 96px 24px 0; box-sizing: border-box; }
+.caps-hero h2 {
+  margin: 0; font-family: var(--f-loos-x); font-weight: 700; font-size: clamp(44px, 6.7vw, 96px);
+  line-height: 1; color: #fff; letter-spacing: 0;
+}
+.svc-list { display: grid; gap: 16px; padding: 0 48px; position: relative; }
+/* clear the fixed section nav on the right so it never sits on the expand buttons */
+@media (min-width: 701px) { .svc-list { padding-right: 150px; } }
+.svc { display: flex; gap: 8px; align-items: stretch; min-height: 200px; color: #fff; }
+.svc-id {
+  flex: 0 0 65px; box-sizing: border-box; background: rgba(0, 0, 0, 0.5); border-top: 4px solid var(--c);
+  display: flex; align-items: center; justify-content: center; padding: 8px 10px;
+}
+.svc-id span {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-family: var(--f-loos-x); font-weight: 700; font-size: 24px; line-height: 0.94; color: var(--c); white-space: nowrap;
+}
+.svc-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.svc-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.svc-meta > * {
+  font-family: var(--f-galix); font-size: 12px; line-height: normal; padding: 4px 8px; border-radius: 2px;
+  background: #000; color: #fff; border-bottom: 2px solid #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.svc-meta .num { font-weight: 500; }
+.svc-meta .see {
+  font: inherit; font-family: var(--f-galix); font-size: 12px; font-weight: 500; text-align: left; cursor: pointer;
+  background: var(--c); color: #000; border: 0; border-bottom: 2px solid #000;
+}
+.svc-meta .see:hover { filter: brightness(1.12); }
+.svc-body {
+  flex: 1 1 auto; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  background: #222; border-top: 4px solid #000; border-radius: 4px; padding: 10px 11px;
+}
+.svc.open .svc-body { padding: 10px 16px; }
+.svc-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.svc-text h3 {
+  margin: 0 0 8px; font-family: var(--f-loos-x); font-weight: 700; font-size: 48px; line-height: 0.94; color: var(--c);
+}
+.svc-text p { margin: 0; font-family: var(--f-galix); font-size: 16px; line-height: normal; color: #fff; text-wrap: balance; }
+/* the open state's extra rows unfold with a 0fr → 1fr grid track */
+.svc-more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.45s cubic-bezier(.2, .7, .2, 1); }
+.svc.open .svc-more { grid-template-rows: 1fr; }
+.svc-more > div { overflow: hidden; min-height: 0; }
+.svc-more ul {
+  list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 8px;
+  font-family: var(--f-loos-x); font-weight: 700; font-size: 24px; line-height: 0.94; color: #919191;
+}
+.svc-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; padding: 24px 0 14px; }
+.svc-tools span {
+  font-family: var(--f-galix); font-weight: 500; font-size: 12px; letter-spacing: 1.68px; text-transform: uppercase;
+  color: #fff; background: #000; border: 2px solid #6b6b6b; border-radius: 4px; padding: 8px 14px; white-space: nowrap;
+}
+.svc-side { flex: 0 0 238px; display: flex; justify-content: flex-end; }
+.svc-toggle {
+  position: relative; width: 152px; height: 138px; flex: none; overflow: hidden; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  background: var(--c20); border: 1px solid var(--c); border-radius: 4px;
+  font-family: var(--f-loos-w); font-weight: 700; font-size: 16px; color: var(--c);
+}
+.svc-toggle .arrow { position: absolute; left: calc(50% - 0.5px); bottom: -1px; transform: translateX(-50%); width: 115px; height: 157px; }
+.svc-toggle .arrow img { display: block; }
+.svc-toggle .arrow.up { transform: translateX(-50%) rotate(180deg); }
+.svc-toggle .arrow.up, .svc.open .svc-toggle .arrow.down { display: none; }
+.svc.open .svc-toggle .arrow.up { display: block; }
+.svc-toggle .lbl { position: relative; }
+.svc-toggle:hover { background: color-mix(in srgb, var(--c) 30%, transparent); }
+.svc-toggle:focus-visible, .svc-meta .see:focus-visible { outline: 1px solid var(--c); outline-offset: 3px; }
+@media (max-width: 700px) {
+  .svc-list { padding: 0 16px; }
+  .svc-id { flex-basis: 40px; padding: 6px; }
+  .svc-id span { font-size: 16px; }
+  .svc-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .svc-body { flex-direction: column-reverse; }
+  .svc-side { flex-basis: auto; align-self: stretch; }
+  .svc-toggle { width: 100%; height: 56px; }
+  .svc-toggle .arrow { display: none !important; }
+  .svc-text h3 { font-size: 32px; }
+  .svc-more ul { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .svc-more { transition: none; } }
 @media (max-width: 700px) { .filters { left: 16px; right: 16px; justify-content: flex-start; } }
 @media (prefers-reduced-motion: reduce) { .filters, .hud { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .thumb img { transition: none; } }
@@ -833,6 +928,7 @@ setGlyphCount(Math.min(16, GN));
 const SECTIONS = [
   { name: 'Intro', title: 'A field that listens', layout: 0, labels: [['Scroll', 0, 262]] },
   { name: 'Work', title: 'Selected work', layout: 5, labels: [] }, // thumbnails instead of labels
+  { name: 'Capabilities', title: 'What I do', layout: 0, labels: [] }, // service cards
   { name: 'About', title: 'How it’s made', layout: 2, labels: [['Studio', -225, -25], ['Process', 247, -25], ['Tools', -64, 105]] },
   { name: 'Contact', title: 'Say hello', layout: 3, labels: [['Email', 62, -168], ['Instagram', -225, 93], ['Say hi', 0, 345]] },
 ];
@@ -873,6 +969,80 @@ SECTIONS.forEach((sec, si) => {
     labels.push({ el, node, twin, si, a: 0 });
   }
 });
+// ---------- capabilities: Service Card component (Figma 209:3560), Close/Open states ----------
+const SERVICES = [
+  { id: 'serv.001', num: '#00001', time: '05:121:20:06:07', name: '3D design', key: '3d', c: [97, 232, 145], tag: '3D',
+    items: ['Modeling and Design', 'Asset Library', 'Product Stills and Animation', '3D Websites', 'Hero Animation', 'Motion Graphics'] },
+  { id: 'serv.002', num: '#00002', time: '06:201:01:30:31', name: 'animation', key: 'animation', c: [150, 85, 249], tag: 'Animation',
+    items: ['motion graphics', 'character animation', 'intro sequence', 'explainer', 'procedural motion', 'generative motion'] },
+  { id: 'serv.003', num: '#00003', time: '03:273:00:00:00', name: 'UX/UI', key: 'ux', c: [251, 215, 10], tag: 'UX/UI',
+    items: ['Discovery & Research', 'Design Systems', 'Web Strategy', 'Custom Builds', 'Launch & Deployment', 'Content Management Solution'] },
+  { id: 'serv.004', num: '#00004', time: '07:293:04:03:51', name: 'brand', key: 'brand', c: [22, 200, 248], tag: 'Art Direction',
+    items: ['Positioning & Persona', 'Strategy & Consulting', 'Motion Identity', 'Visual Identity', 'Style Guides'] },
+];
+const SVC_DESC = 'Web experiences that show, not tell. Build an experience that invests in your users.';
+const SVC_TOOLS = ['GLSL', 'three.js', 'blender', 'agentic dev', 'HTML', 'JS', 'CSS', 'Webflow', 'Shopify'];
+const capsSec = sectionsEl.children[SECTIONS.findIndex(x => x.name === 'Capabilities')];
+capsSec.classList.add('caps');
+capsSec.innerHTML = `<div class="caps-hero"><h2>capabilities</h2></div><div class="svc-list"></div>`;
+const svcList = capsSec.querySelector('.svc-list');
+SERVICES.forEach((sv, i) => {
+  const el = document.createElement('article');
+  el.className = 'svc' + (i === 0 ? ' open' : ''); // Figma frame: 3D starts open
+  el.style.setProperty('--c', `rgb(${sv.c.join(',')})`);
+  el.style.setProperty('--c20', `rgba(${sv.c.join(',')},0.2)`);
+  const moreId = 'svc-more-' + sv.key;
+  el.innerHTML = `
+    <div class="svc-id" aria-hidden="true"><span>${sv.id}</span></div>
+    <div class="svc-main">
+      <div class="svc-meta">
+        <span>absTime.spent</span><span>${sv.time}</span><span class="num">${sv.num}</span>
+        <button type="button" class="see">see work</button>
+      </div>
+      <div class="svc-body">
+        <div class="svc-text">
+          <h3>${sv.name}</h3>
+          <p>${SVC_DESC}</p>
+          <div class="svc-more" id="${moreId}"><div>
+            <ul>${sv.items.map(t => `<li>${t}</li>`).join('')}</ul>
+            <div class="svc-tools">${SVC_TOOLS.map(t => `<span>${t}</span>`).join('')}</div>
+          </div></div>
+        </div>
+        <div class="svc-side">
+          <button type="button" class="svc-toggle" aria-controls="${moreId}">
+            <span class="arrow down"><img src="assets/capabilities/arrow-${sv.key}-close.svg" width="115" height="157" alt=""></span>
+            <span class="arrow up"><img src="assets/capabilities/arrow-${sv.key}-open.svg" width="115" height="157" alt=""></span>
+            <span class="lbl"></span>
+          </button>
+        </div>
+      </div>
+    </div>`;
+  svcList.appendChild(el);
+  const btn = el.querySelector('.svc-toggle'), lbl = btn.querySelector('.lbl');
+  const more = el.querySelector('.svc-more');
+  const sync = () => {
+    const open = el.classList.contains('open');
+    btn.setAttribute('aria-expanded', String(open));
+    lbl.textContent = open ? 'COLLAPSE' : 'EXPAND';
+    more.inert = !open; // closed rows stay out of the tab order
+  };
+  sync();
+  btn.addEventListener('click', () => {
+    el.classList.toggle('open'); sync();
+    audioInit();
+    if (el.classList.contains('open')) pluck(noteFreq(7 + i * 2), 0, 1.1, 0.18, 1.2);
+    else tick(noteFreq(5 + i * 2), 0, 0.05, 'triangle', 0.16);
+  });
+  // the field takes the service colour while you're on its card
+  el.addEventListener('pointerenter', () => { tint.target = sv.c; });
+  el.addEventListener('pointerleave', () => { if (tint.target === sv.c) tint.target = null; });
+  // "see work" jumps to Work, filtered to this service's tag
+  el.querySelector('.see').addEventListener('click', () => {
+    sel.clear(); sel.add(sv.tag); updateFilters();
+    scrollTo({ top: sectionsEl.children[1].offsetTop, behavior: reduce ? 'auto' : 'smooth' });
+  });
+});
+
 const secEl = document.getElementById('sec');
 const secName = document.getElementById('sec-name'), secTitle = document.getElementById('sec-title');
 let section = -1;
@@ -1696,6 +1866,7 @@ function frame(now) {
     filtersEl.classList.toggle('on', inWork);
     document.body.classList.toggle('in-work', inWork);
   }
+  document.body.classList.toggle('in-caps', SECTIONS[section].name === 'Capabilities');
   for (const T of thumbs) {
     const n = tileNode[T.i];
     if (!n) continue;
