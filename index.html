@@ -1169,7 +1169,7 @@ uniform vec3 uTint; uniform float uTintAmt; uniform float uInvert;
 uniform sampler2D uRD; uniform float uRDAmt; uniform float uWork;
 #define GN ${GN}
 uniform vec4 uGa[GN]; uniform vec4 uGb[GN]; uniform int uGCount;
-uniform vec4 uOrb; uniform float uDash; uniform vec2 uOff;
+uniform vec4 uOrb; uniform float uDash; uniform vec2 uOff; uniform vec2 uOrbS;
 
 float sdSeg(vec2 p, vec2 a, vec2 b, float r){
   vec2 pa = p - a, ba = b - a;
@@ -1218,6 +1218,7 @@ vec3 scene(vec2 p){
 
   float core = 1e5, shell = 1e5, holes = 1e5, dots = 1e5, dim = 1e5, rings = 1e5;
   float pillO = 1e5, pillF = 1e5, slotW = 1e5, slotD = 1e5;
+  float nd = 1e5, nz = 0.; // nearest shape and its orbit depth (0 = in front of the sun, 1 = far back)
 
   for (int i = 0; i < N; i++) {
     if (i >= uCount) break;
@@ -1228,6 +1229,7 @@ vec3 scene(vec2 p){
     vec2 lq = p - A.xy;
     float rr = A.z * 0.92;
     float d = cr > 0.99 ? sdSeg(p, A.xy, B.xy, A.z) : sdBox(lq, vec2(rr * (1. - cr)) + abs(B.xy - A.xy)) - rr * cr;
+    if (d < nd) { nd = d; nz = fract(B.w) / 0.45; }
     if (lay < 0.5) {
       core = smin(core, d, k);
       shell = smin(shell, d - (A.z * 0.3 + 16.) * (1. - uWork), k * 2.2);
@@ -1263,7 +1265,9 @@ vec3 scene(vec2 p){
 
   // orbit lines behind everything: heavy → hairline, then a dashed one (like the line sheet).
   // Their metric blends circle / square / diamond / drum with the current layout.
-  vec2 oc = p - uOff - vec2(20., 10.) * uOrb.x; // the rings travel with the joystick
+  // the rings travel with the joystick, and in orbit mode stretch onto the tilted orbital plane
+  vec2 oc = (p - uOff - vec2(20., 10.) * uOrb.x) / uOrbS;
+  float opx = px / uOrbS.y; // keeps the line weights honest after the stretch (exact at the plane's near/far edges)
   vec2 ao = abs(oc);
   float ol = uOrb.x * length(oc) + uOrb.y * max(ao.x, ao.y) * 1.02
            + uOrb.z * (ao.x + ao.y) * 0.8 + uOrb.w * max(ao.x * 1.5, ao.y * 0.78);
@@ -1271,7 +1275,7 @@ vec3 scene(vec2 p){
   for (int j = 0; j < 4; j++) {
     float r = 300. + float(j) * 26.;
     float w = j == 0 ? 2.4 : j == 1 ? 1.2 : j == 2 ? 0.5 : 0.8;
-    float l = 1. - smoothstep(0., px * 1.1, abs(ol - r) - w * 0.5);
+    float l = 1. - smoothstep(0., opx * 1.1, abs(ol - r) - w * 0.5 / uOrbS.y);
     if (j == 3) l *= mod(uDash, 4.) > 1.5 ? dashes(oc, ol, 11.) : 0.;
     orbit = max(orbit, l);
   }
@@ -1354,6 +1358,9 @@ vec3 scene(vec2 p){
   // dots
   col = mix(col, vec3(0.95), 1. - smoothstep(-aa, aa, dots));
 
+  // orbit depth: planets on the far side sink into haze, along with their glow and contours
+  if (nz > 0.001) col = mix(col, vec3(0.071, 0.075, 0.075), 0.62 * nz * exp(-max(nd, 0.) / 90.));
+
   return col;
 }
 
@@ -1423,7 +1430,7 @@ const loc = gl.getAttribLocation(prog, 'p');
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 const U = {};
-for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uOff', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork'])
+for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uOff', 'uOrbS', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork'])
   U[n] = gl.getUniformLocation(prog, n);
 const arrA = new Float32Array(N * 4), arrB = new Float32Array(N * 4);
 const arrGa = new Float32Array(GN * 4), arrGb = new Float32Array(GN * 4);
@@ -1843,10 +1850,12 @@ vSlider.addEventListener('keydown', e => {
 new ResizeObserver(syncDots).observe(vSlider);
 syncDots();
 
-// switch two: orbit. The shapes go near-weightless and their homes wheel slowly round the centre (inner ones
-// faster, like a little solar system). Off, the wheel fades out over several seconds and the soft springs float
-// everything back to where it started.
-const ORBIT_W = 0.11;   // rad/s at 160 world units from the centre (~a minute a lap)
+// switch two: orbit — a faked-3D solar system. The middle of the comp stays put as the sun, turning slowly; the
+// rest go near-weightless and become planets on a tilted orbital plane, projected with perspective so they swell
+// as they come round the front and shrink and haze over at the back. The joystick tilts the camera while it's on.
+// Off, the system fades out over several seconds and the soft springs float everything back home.
+// (Flat 2D version: commit eb7e192.)
+const ORBIT_W = 0.16;      // rad/s at mid-distance; Kepler-ish, so inner planets whip round and outer ones crawl
 const ORBIT_IN = 0.9, ORBIT_OUT = 0.4; // 1/s: eases in fairly briskly, lets go slowly
 const swOrbit = document.getElementById('sw-orbit');
 let orbitOn = false, orbitAmt = 0;
@@ -1855,29 +1864,52 @@ swOrbit.addEventListener('click', () => {
   swOrbit.setAttribute('aria-checked', String(orbitOn));
   tick(noteFreq(orbitOn ? 12 : 7), 0, 0.05, 'square', 0.06);
 });
+const ORBIT_R0 = 500;      // world units: the comp's own radius
+const ORBIT_SUN = 0.24;    // shapes this close to the middle (fraction of R0) stay home as the sun
+const ORBIT_SPREAD = 0.92; // planets' widest orbit, as a fraction of the half-screen
+const ORBIT_PITCH = 1.08;  // rad (~62°): how far the orbital plane is tipped back from face-on
+const ORBIT_PERSP = 0.38;  // perspective: a planet at the front is ×1.6, at the back ×0.72
+const CAM_PITCH = 0.45, CAM_YAW = 0.55; // rad the joystick can tip / swing the camera while orbiting
+const cam = { pitch: ORBIT_PITCH, yaw: 0, cp: 1, sp: 0, cy: 1, sy: 0, A: 1, Ay: 1 };
 // k scales it down where the layout has to hold (the Work grid)
 function orbitFrame(dt, k) {
   orbitAmt += ((orbitOn ? 1 : 0) - orbitAmt) * (1 - Math.exp(-dt * (orbitOn ? ORBIT_IN : ORBIT_OUT)));
+  // the stick springs back when let go, so the camera settles back to its resting angle on its own
+  const f = 1 - Math.exp(-dt * 5);
+  const pitch = Math.max(0.15, Math.min(1.45, ORBIT_PITCH + stick.y * CAM_PITCH * orbitAmt));
+  cam.pitch += (pitch - cam.pitch) * f;
+  cam.yaw += (stick.x * CAM_YAW * orbitAmt - cam.yaw) * f;
+  cam.cp = Math.cos(cam.pitch); cam.sp = Math.sin(cam.pitch);
+  cam.cy = Math.cos(cam.yaw); cam.sy = Math.sin(cam.yaw);
+  // the plane's long axis spans the width; its depth axis is sized so the resting tilt spans the height
+  cam.A = W / 2 / scale * ORBIT_SPREAD;
+  cam.Ay = H / 2 / scale * ORBIT_SPREAD / Math.cos(ORBIT_PITCH);
   return orbitAmt * k;
 }
-// a shape's home, turned through its own accumulated angle and blended in by oa. The angle keeps running while
-// the orbit fades so the return is one continuous glide, and only resets once it's fully off.
-// While orbiting, the comp also spreads way out: its ~500-unit disc is stretched radially onto a squircle that
-// nearly fills the screen, so the outer ring sweeps past the corners and the inner shapes thin out in between.
-const ORBIT_R0 = 500;     // world units: the comp's own radius
-const ORBIT_SPREAD = 0.9; // of the half-screen, on each axis
-const ORBIT_SQUARE = 0.6; // 0 = ellipse, 1 = rectangle; in between keeps the corners reachable but rounded
-const ORBIT_PUSH = 0.5;   // radius exponent: 1 = scale evenly, lower = inner rings pushed further out
+// A shape's target while orbiting, blended in by oa. Also leaves n.os (size from perspective) and n.oz (0..1, how
+// far behind the sun it is, for the haze). The angle keeps running while the orbit fades so the return is one
+// continuous glide, and only resets once it's fully off.
 function orbitHome(n, x, y, oa, dt) {
+  n.os = 1; n.oz = 0;
   if (oa < 0.001) { if (!orbitOn) n.th = 0; return [x, y]; }
-  n.th = (n.th || 0) + dt * ORBIT_W * Math.min(1.8, 160 / Math.max(60, Math.hypot(x, y)));
+  const ul = Math.hypot(x, y) / ORBIT_R0;
+  const sun = ul < ORBIT_SUN;
+  // planets: an orbit gap round the sun, then the rest of the comp spread out to the edges
+  const rho = sun ? 0 : 0.3 + 0.7 * Math.pow(Math.min(1, (ul - ORBIT_SUN) / (1 - ORBIT_SUN)), 0.7);
+  n.th = (n.th || 0) + dt * (sun ? ORBIT_W * 0.4 : ORBIT_W * Math.min(3, Math.pow(0.6 / rho, 1.5)));
   const c = Math.cos(n.th), s = Math.sin(n.th);
-  const ux = (x * c - y * s) / ORBIT_R0, uy = (x * s + y * c) / ORBIT_R0, ul = Math.hypot(ux, uy);
-  // circle → square radial stretch (1 on the axes, √2 on the diagonals), only partly applied
-  const sq = ul / Math.max(Math.abs(ux), Math.abs(uy), 1e-6);
-  // and a power curve on the radius, so the dense middle thins out toward the edges instead of staying a clump
-  const k = (1 + (sq - 1) * ORBIT_SQUARE) * Math.pow(Math.min(ul, 1.05) + 1e-6, ORBIT_PUSH) / (ul + 1e-6);
-  const ox = ux * k * W / 2 / scale * ORBIT_SPREAD, oy = uy * k * H / 2 / scale * ORBIT_SPREAD;
+  const rx = x * c - y * s, ry = x * s + y * c;
+  // the sun is a ball, so it looks the same from any angle: it just turns in place
+  if (sun) return [x + (rx - x) * oa, y + (ry - y) * oa];
+  // on the plane: (u, v) at radius rho. Tip it back (v toward the viewer is the bottom of the screen), swing it
+  // round the vertical axis, then divide by depth.
+  const u = rx / (ul * ORBIT_R0) * rho, v = ry / (ul * ORBIT_R0) * rho;
+  const py = v * cam.cp, pz = -v * cam.sp;
+  const X = u * cam.cy + pz * cam.sy, Z = -u * cam.sy + pz * cam.cy;
+  const sc = 1 / (1 + Z * ORBIT_PERSP);
+  n.os = 1 + (sc - 1) * oa;
+  n.oz = Math.max(0, Math.min(1, Z)) * oa;
+  const ox = X * cam.A * sc, oy = py * cam.Ay * sc;
   return [x + (ox - x) * oa, y + (oy - y) * oa];
 }
 
@@ -1927,7 +1959,9 @@ joy.addEventListener('blur', () => { keysDown.clear(); stick.held = false; });
 // k: 1 = offset applies, 0 = the comp eases home (Work grid, contact panel)
 function joyFrame(dt, k) {
   if (stick.held) {
-    comp.x += stick.x * COMP_SPEED * dt; comp.y += stick.y * COMP_SPEED * dt;
+    // in orbit mode the stick tilts the camera instead (orbitFrame), so it stops pushing
+    const push = COMP_SPEED * dt * (1 - orbitAmt);
+    comp.x += stick.x * push; comp.y += stick.y * push;
     clampComp();
   } else {
     const f = Math.exp(-dt * 14); stick.x *= f; stick.y *= f; // the knob springs back…
@@ -2443,17 +2477,20 @@ function frame(now) {
     if (n.s < 0.01) continue;
     const e = n.s * n.s * (3 - 2 * n.s);
     const c = Math.cos(n.ang || 0), s = Math.sin(n.ang || 0);
-    const ox = n.rox * c - n.roy * s, oy = n.rox * s + n.roy * c;
+    const os = n.os || 1; // orbit perspective: the whole shape scales, capsule and rectangle extents included
+    const ox = (n.rox * c - n.roy * s) * os, oy = (n.rox * s + n.roy * c) * os;
     const lab = n.lab || 0;
     const isTile = n.tile >= 0 && workAmt > 0.3;
     const flag = n.layer === 0 ? n.flag * (1 - lab) : (n.layer === 1 && lab > 0.5) || isTile ? 0 : n.flag;
-    const rs = n.rs ?? 1;
+    const rs = (n.rs ?? 1) * os;
     arrA.set([n.x, n.y, n.r * e * rs * (1 + 0.22 * lab) * (1 + 0.02 * (n.hov || 0)), flag], count * 4);
     const ext = (n.ex || 0) > 0.5 || (n.ey || 0) > 0.5;
     const cr = ext ? Math.min(n.cr ?? 1, 0.98) : n.cr ?? CORNER[n.sq];
-    const bx = n.rox || n.roy ? n.x + ox : n.x + (n.ex || 0);
-    const by = n.rox || n.roy ? n.y + oy : n.y + (n.ey || 0);
-    arrB.set([bx, by, n.hole * e * rs * (1 - lab), n.layer + 4 * Math.round(cr * 255)], count * 4);
+    const bx = n.rox || n.roy ? n.x + ox : n.x + (n.ex || 0) * os;
+    const by = n.rox || n.roy ? n.y + oy : n.y + (n.ey || 0) * os;
+    // orbit depth rides in B.w's fraction: layer and corner are whole numbers, so the shader's mod/floor
+    // decoding is untouched as long as it stays under 0.5
+    arrB.set([bx, by, n.hole * e * rs * (1 - lab), n.layer + 4 * Math.round(cr * 255) + (n.oz || 0) * 0.45], count * 4);
     count++;
   }
   gl.uniform2f(U.uRes, W, H);
@@ -2465,7 +2502,7 @@ function frame(now) {
   let pc = 0;
   for (const q of glyphs) {
     if (q.s < 0.01) continue;
-    arrGa.set([q.x, q.y, q.size * q.s, q.rot], pc * 4);
+    arrGa.set([q.x, q.y, q.size * q.s * (q.os || 1), q.rot], pc * 4);
     arrGb.set([q.g.t, q.g.p, q.st, q.g.f], pc * 4);
     pc++;
   }
@@ -2475,6 +2512,8 @@ function frame(now) {
   const oa = LAYOUT_ORB[from], ob = LAYOUT_ORB[to];
   gl.uniform4f(U.uOrb, ...oa.map((v, j) => v + (ob[j] - v) * m));
   gl.uniform2f(U.uOff, offX, offY);
+  // orbit lines stretch out onto the orbital plane: radius 300 lands among the planets (~0.6 of the widest orbit)
+  gl.uniform2f(U.uOrbS, 1 + (cam.A * 0.002 - 1) * orb, 1 + (cam.Ay * cam.cp * 0.002 - 1) * orb);
   gl.uniform1f(U.uDash, dashMode);
   gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
   gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
