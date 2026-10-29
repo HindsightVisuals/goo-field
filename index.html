@@ -1,3 +1,6 @@
+<!doctype html>
+<!-- standards mode: without the doctype the page scrolled through <body>, and Lenis (which drives <html>) couldn't move it -->
+<meta charset="utf-8">
 <title>Goo Field</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -375,6 +378,24 @@ body.in-caps .hud > * { pointer-events: none; }
 body:not(.debug) .panel { display: none; }
 .panel { z-index: 35; }
 body.contact-open .labels, body.contact-open .thumbs, body.contact-open .filters { visibility: hidden; }
+/* Lenis' recommended base styles */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* send → "signal received": the goo leaves the panel and takes the screen, the line lands over it */
+body.takeover .contact-stage, body.takeover .ccomm, body.takeover .cfoot { opacity: 0; transition: opacity 0.45s ease; }
+body.takeover .contact { background: transparent; }
+body.takeover #c { z-index: 25; }
+body.takeover .nav { background: transparent; border-color: transparent; }
+.signal {
+  position: fixed; inset: 0; z-index: 26; display: grid; place-items: center; pointer-events: none;
+  margin: 0; font: 700 clamp(44px, 9vw, 150px)/0.94 var(--wordmark); color: #fff; text-align: center;
+  mix-blend-mode: difference; /* reads over white goo and dark field alike */
+}
+.signal[hidden] { display: none; }
+.signal .line { display: block; padding: 0 16px; }
+.signal .line span { display: inline-block; white-space: pre; }
 
 /* --- contact page (Figma 162:489) — the goo canvas moves into .contact-goo while it's open --- */
 .contact {
@@ -505,7 +526,10 @@ select.cfield.set { color: #efefef; }
   </div>
 </div>
 
-<section class="contact" id="contact" hidden aria-labelledby="contact-title">
+<p class="signal" id="signal" role="status" hidden></p>
+
+<!-- data-lenis-prevent: the page's own overflow scroll, left native under Lenis -->
+<section class="contact" id="contact" hidden aria-labelledby="contact-title" data-lenis-prevent>
   <div class="contact-stage">
     <div class="contact-goo" id="contact-goo"></div>
     <div class="cmodal">
@@ -616,6 +640,9 @@ select.cfield.set { color: #efefef; }
   </details>
 </div>
 
+<!-- GSAP's ticker drives Lenis (smoothed native scroll) and eases the in-page jumps; the page still works without either -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
 <script>
 (() => {
 const canvas = document.getElementById('c');
@@ -797,6 +824,119 @@ function morphSweep(step) {
     osc.connect(f); osc.start(t); osc.stop(t + dur + 0.05); return osc;
   }));
   oscs[0].onended = () => { o.done(); f.disconnect(); g.disconnect(); };
+}
+
+// "wes", spoken by something that isn't from here: a buzzy glottal source pushed through three formant
+// bandpasses gliding from /u/ (the w) into /ɛ/ (the e), ring-modulated so it turns metallic, with a fifth-up
+// ghost voice, then a hissed s. Heavy on the echo send so it trails off through the ping-pong delay.
+let wesLast = -9;
+function wesVoice() {
+  if (!live() || A.ctx.currentTime - wesLast < 1.2) return;
+  const ctx = A.ctx, t = ctx.currentTime; wesLast = t;
+  const o = voiceOut(0, 0.75);
+  const voiced = ctx.createGain(); env(voiced, t, 0.5, 0.05, 0.42);
+  // ring mod: an oscillator driving a gain that sits at zero swings the signal through both polarities
+  const ring = ctx.createGain(); ring.gain.value = 0;
+  const rm = ctx.createOscillator(); rm.frequency.value = 53;
+  rm.connect(ring.gain);
+  const dry = ctx.createGain(); dry.gain.value = 0.55;
+  voiced.connect(ring); voiced.connect(dry);
+  ring.connect(o.node); dry.connect(o.node);
+  const srcs = [[1, 0.9], [1.5, 0.35]].map(([k, lvl]) => {
+    const s = ctx.createOscillator(); s.type = 'sawtooth';
+    s.frequency.setValueAtTime(92 * k, t);
+    s.frequency.exponentialRampToValueAtTime(128 * k, t + 0.14); // the w lifts into the vowel
+    s.frequency.exponentialRampToValueAtTime(78 * k, t + 0.45);  // and the e sags away
+    const g = ctx.createGain(); g.gain.value = lvl;
+    s.connect(g); return { s, g };
+  });
+  // formants: [F1, F2, F3] for w → e, with their gains and widths
+  const FORM = [[300, 550, 1, 6], [700, 1850, 0.55, 9], [2200, 2500, 0.3, 12]];
+  const filters = FORM.map(([a, b, lvl, q]) => {
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = q;
+    f.frequency.setValueAtTime(a, t);
+    f.frequency.exponentialRampToValueAtTime(b, t + 0.13);
+    const g = ctx.createGain(); g.gain.value = lvl * 2.2;
+    for (const { g: sg } of srcs) sg.connect(f);
+    f.connect(g); g.connect(voiced); return [f, g];
+  });
+  // the s: bright noise, fading in as the vowel fades out
+  const n = ctx.createBufferSource(); n.buffer = A.noise;
+  const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 6200; hp.Q.value = 1.4;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, t + 0.3);
+  ng.gain.exponentialRampToValueAtTime(0.09, t + 0.36);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.62);
+  n.connect(hp); hp.connect(ng); ng.connect(o.node);
+  for (const { s } of srcs) { s.start(t); s.stop(t + 0.5); }
+  rm.start(t); rm.stop(t + 0.5);
+  n.start(t + 0.28, Math.random() * 0.1); n.stop(t + 0.66);
+  n.onended = () => {
+    o.done(); voiced.disconnect(); ring.disconnect(); dry.disconnect(); hp.disconnect(); ng.disconnect();
+    for (const { g } of srcs) g.disconnect();
+    for (const [f, g] of filters) { f.disconnect(); g.disconnect(); }
+  };
+}
+
+// one percussive hit, scheduled at time t: a pitch-dropping oscillator, or a ringing filtered-noise tick
+function hit(t, { f = 880, type = 'sine', dur = 0.08, vel = 0.06, bend = 2, noise = false, q = 20, pan = 0, send = 0.5 }) {
+  const ctx = A.ctx, o = voiceOut(pan, send);
+  const g = ctx.createGain(); env(g, t, vel, 0.002, dur);
+  g.connect(o.node);
+  let src, bp;
+  if (noise) {
+    src = ctx.createBufferSource(); src.buffer = A.noise;
+    bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+    src.connect(bp); bp.connect(g);
+    src.start(t, Math.random() * 0.3); src.stop(t + dur + 0.02);
+  } else {
+    src = ctx.createOscillator(); src.type = type;
+    src.frequency.setValueAtTime(f * bend, t);
+    src.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.04, dur * 0.5));
+    src.connect(g);
+    src.start(t); src.stop(t + dur + 0.02);
+  }
+  src.onended = () => { o.done(); g.disconnect(); if (bp) bp.disconnect(); };
+}
+
+// three alien rhythms for the three nav links (Work, Capabilities, About), as [time, hit] lists
+const RHYTHMS = {
+  // Work: a pulsar — metallic pings closing in on each other, then one low answer
+  1: [[0, { f: 1480, type: 'triangle', bend: 1.4, dur: 0.1, pan: -0.4 }], [0.17, { f: 1480, type: 'triangle', bend: 1.4, dur: 0.09, pan: 0.4 }],
+      [0.29, { f: 1660, type: 'triangle', bend: 1.4, dur: 0.08, pan: -0.2 }], [0.37, { f: 1860, type: 'triangle', bend: 1.4, dur: 0.07, pan: 0.2 }],
+      [0.42, { f: 2090, type: 'triangle', bend: 1.4, dur: 0.06 }], [0.56, { f: 370, type: 'sine', bend: 3, dur: 0.32, vel: 0.09, send: 0.7 }]],
+  // Capabilities: insect chatter — ringing triplets that climb
+  2: [[0, { f: 3100, noise: true, q: 30, dur: 0.05, vel: 0.12, pan: -0.5 }], [0.05, { f: 3500, noise: true, q: 30, dur: 0.05, vel: 0.1, pan: -0.5 }],
+      [0.1, { f: 3900, noise: true, q: 30, dur: 0.05, vel: 0.1, pan: -0.5 }],
+      [0.26, { f: 3500, noise: true, q: 30, dur: 0.05, vel: 0.12, pan: 0.5 }], [0.31, { f: 3900, noise: true, q: 30, dur: 0.05, vel: 0.1, pan: 0.5 }],
+      [0.36, { f: 4400, noise: true, q: 30, dur: 0.05, vel: 0.1, pan: 0.5 }],
+      [0.52, { f: 990, type: 'square', bend: 2.5, dur: 0.12, vel: 0.035, send: 0.8 }]],
+  // About: sonar — two low heartbeat thumps, then a long ping left ringing in the echo
+  3: [[0, { f: 62, type: 'sine', bend: 2.6, dur: 0.22, vel: 0.22, send: 0.2 }], [0.17, { f: 58, type: 'sine', bend: 2.6, dur: 0.24, vel: 0.18, send: 0.2 }],
+      [0.42, { f: 1320, type: 'sine', bend: 1.02, dur: 0.9, vel: 0.07, send: 0.9 }]],
+};
+const rhythmUntil = {};
+function navRhythm(i) {
+  const R = RHYTHMS[i];
+  if (!R || !live()) return;
+  const t = A.ctx.currentTime;
+  if (t < (rhythmUntil[i] || 0)) return; // let a pattern finish rather than stacking it
+  rhythmUntil[i] = t + R[R.length - 1][0] + 0.12;
+  for (const [dt, h] of R) hit(t + dt, h);
+}
+
+// scrolling: an echoing click per stretch of travel — a high-Q noise tock that rings like a cricket, with a tiny
+// falling chirp under it, alternating sides and sent hard into the ping-pong delay so each one trails off
+let clickSide = 1, clickLast = 0, clickStep = 0;
+function alienClick(speed) {
+  if (!live()) return;
+  const t = A.ctx.currentTime;
+  if (t - clickLast < 0.045) return;
+  clickLast = t; clickSide = -clickSide; clickStep = (clickStep + 1) % 3;
+  const f = [2350, 2790, 2090][clickStep] * (1 + (Math.random() - 0.5) * 0.06);
+  const vel = Math.min(0.16, 0.05 + speed * 0.00004);
+  hit(t, { f, noise: true, q: 26, dur: 0.045, vel, pan: clickSide * 0.6, send: 0.85 });
+  hit(t, { f: f / 3, type: 'sine', bend: 1.8, dur: 0.03, vel: vel * 0.35, pan: clickSide * 0.6, send: 0.85 });
 }
 
 // ---------- oscilloscope ----------
@@ -1279,7 +1419,15 @@ const navLinks = document.getElementById('navlinks');
 const labels = [];
 const navBtns = [];
 // set once the contact page exists; a nav link closes it before scrolling
-let goSection = si => scrollTo({ top: sectionsEl.children[si].offsetTop, behavior: reduce ? 'auto' : 'smooth' });
+// ---------- smooth scroll: Lenis smooths the real page scroll (so position: sticky still works), on GSAP's ticker ----------
+const lenis = !reduce && window.Lenis && window.gsap ? new Lenis({ lerp: 0.085, wheelMultiplier: 0.9 }) : null;
+if (lenis) { gsap.ticker.add(t => lenis.raf(t * 1000)); gsap.ticker.lagSmoothing(0); }const JUMP_EASE = window.gsap ? gsap.parseEase('power3.inOut') : t => t;
+// every in-page jump goes through here: a GSAP-eased glide, or a plain jump under reduced motion
+function smoothTo(y, { immediate = false } = {}) {
+  if (lenis) lenis.scrollTo(y, { duration: 1.3, easing: JUMP_EASE, immediate, force: true });
+  else window.scrollTo({ top: y, behavior: reduce || immediate ? 'auto' : 'smooth' });
+}
+let goSection = si => smoothTo(sectionsEl.children[si].offsetTop);
 SECTIONS.forEach((sec, si) => {
   const s = document.createElement('section');
   s.innerHTML = `<h2 class="sr">${sec.title}</h2>`;
@@ -1293,7 +1441,7 @@ SECTIONS.forEach((sec, si) => {
     navLinks.appendChild(b); navBtns[si] = b;
     const c = NAV_COLORS[si % NAV_COLORS.length];
     b.style.setProperty('--c', `rgb(${c.join(',')})`);
-    const on = () => { tint.target = c; tick(noteFreq(10 + si * 2), 0.8, 0.035); };
+    const on = () => { tint.target = c; navRhythm(si); };
     const off = () => { if (tint.target === c) tint.target = null; };
     b.addEventListener('pointerenter', on); b.addEventListener('pointerleave', off);
     b.addEventListener('focus', on); b.addEventListener('blur', off);
@@ -1392,7 +1540,7 @@ SERVICES.forEach((sv, i) => {
   // "see work" jumps to Work, filtered to this service's tag
   el.querySelector('.see').addEventListener('click', () => {
     sel.clear(); sel.add(sv.tag); updateFilters();
-    scrollTo({ top: sectionsEl.children[1].offsetTop, behavior: reduce ? 'auto' : 'smooth' });
+    smoothTo(sectionsEl.children[1].offsetTop);
   });
 });
 
@@ -2350,7 +2498,7 @@ function drainTo(x, y) {
   else pour(+pool.getAttribute('cx'), +pool.getAttribute('cy'), pourState.r, 0, 0.35, easeInCubic);
   pourState.full = false;
 }
-logo.addEventListener('pointerenter', e => fillFrom(...edgePoint(e)));
+logo.addEventListener('pointerenter', e => { fillFrom(...edgePoint(e)); wesVoice(); });
 logo.addEventListener('pointerleave', e => drainTo(...edgePoint(e)));
 logo.addEventListener('focus', () => fillFrom(0, LOGO_H / 2));
 logo.addEventListener('blur', () => drainTo(LOGO_W, LOGO_H / 2));
@@ -2493,6 +2641,7 @@ function swapContact(open) {
   contactEl.hidden = !open;
   document.body.classList.toggle('contact-open', open);
   document.documentElement.style.overflow = open ? 'hidden' : '';
+  if (lenis) open ? lenis.stop() : lenis.start();
   if (open) { contactGoo.appendChild(canvas); contactEl.scrollTop = 0; }
   else document.body.insertBefore(canvas, canvasHome);
   mouse.inside = false; mouse.down = false;
@@ -2526,12 +2675,12 @@ emblem.el.addEventListener('click', () => { audioInit(); setContact(!contactOpen
 addEventListener('keydown', e => { if (e.key === 'Escape' && contactOpen) setContact(false); });
 goSection = async si => {
   if (contactOpen) await setContact(false, { focus: false });
-  scrollTo({ top: sectionsEl.children[si].offsetTop, behavior: reduce ? 'auto' : 'smooth' });
+  smoothTo(sectionsEl.children[si].offsetTop);
 };
 logo.addEventListener('click', async e => {
   e.preventDefault();
   if (contactOpen) await setContact(false, { focus: false });
-  scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+  smoothTo(0);
 });
 // the same footer closes the main flow; its own "contact" opens the page rather than scrolling it
 const mainFoot = document.getElementById('sitefoot').cloneNode(true);
@@ -2550,19 +2699,110 @@ addEventListener('click', e => {
   else { audioInit(); setContact(true); }
 });
 
-// the form, plain for now: the commms version fed typing into the blob; that comes back mapped to the goo later
+// the form feeds the goo (see "the form feeds the goo" below)
 const FORM_SERVICES = ['Brand Design', 'Landing Page', '3D Rendering', 'Product Rendering', 'eCommerce', 'Marketing Site', '3D Animation', '3D Website', 'User Experience Design', 'Brand Strategy', 'App Design'];
 const chipsEl = document.getElementById('chips');
 for (const s of FORM_SERVICES) {
   const b = document.createElement('button');
   b.type = 'button'; b.textContent = s; b.setAttribute('aria-pressed', 'false');
-  b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')));
+  b.addEventListener('click', () => {
+    const on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', String(on));
+    formTarget = formEnergy();
+    pluck(noteFreq(8 + Math.round(formTarget * 12)), 0, on ? 1.2 : 0.6, 0.12, 0.7);
+  });
   chipsEl.appendChild(b);
 }
 const cform = document.getElementById('cform');
 cform.budget.addEventListener('change', () => cform.budget.classList.add('set'));
+
+// ---------- the form feeds the goo: it opens sparse, and everything typed grows it and speeds it up ----------
+// Energy runs 0 → 1 on characters typed (plus a budget and any services picked), with diminishing returns, so
+// the first words change the most. formFrame turns it into shapes, glyphs, contour lines and drift speed.
+const FORM_DOTS = 10, FORM_GLYPHS = 2, FORM_LINES = 1; // an empty form: a few shapes, barely any lines
+const FORM_CHARS = 160; // characters for ~63% energy; ~480 is near full
+let formTarget = 0, formE = 0, formApplied = false, formCounts = '', takingOver = false;
+function formEnergy() {
+  const f = cform.elements;
+  const chars = ['name', 'email', 'phone', 'project'].reduce((s, k) => s + f[k].value.length, 0)
+    + (f.budget.value ? 12 : 0) + chipsEl.querySelectorAll('[aria-pressed="true"]').length * 14;
+  return 1 - Math.exp(-chars / FORM_CHARS);
+}
+cform.addEventListener('input', e => {
+  formTarget = formEnergy();
+  // each keystroke is a blip that climbs with the energy, scattered across the stereo field
+  if (e.target.matches('input, textarea')) tick(noteFreq(6 + Math.round(formTarget * 16)), (Math.random() - 0.5) * 0.8, 0.03, 'triangle', 0.08);
+});
+cform.addEventListener('change', () => { formTarget = formEnergy(); });
+// returns the speed boost for the drift (0 = normal)
+function formFrame(dt) {
+  const active = contactOpen || takingOver;
+  formE += ((active ? formTarget : 0) - formE) * (1 - Math.exp(-dt * 1.5));
+  if (active) {
+    const c = Math.round(FORM_DOTS + formE * (DOT_MAX - FORM_DOTS));
+    const g = Math.round(FORM_GLYPHS + formE * (GN - FORM_GLYPHS));
+    const l = Math.round(FORM_LINES + formE * 9);
+    const key = c + ':' + g + ':' + l;
+    if (key !== formCounts) { formCounts = key; setCount(c); setGlyphCount(g); P_.contours = l; }
+    formApplied = true;
+    return formE;
+  }
+  if (formApplied) { // back to whatever the HUD / debug panel say
+    formApplied = false; formCounts = '';
+    setCount(+countEl.value); setGlyphCount(+plusEl.value); P_.contours = +document.getElementById('contours').value;
+  }
+  return 0;
+}
+
+// ---------- send → "signal received": the goo leaves the panel and takes the whole screen, then hands back to the hero ----------
+const signalEl = document.getElementById('signal');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function signalReceived(mailto) {
+  takingOver = true; wiping = true;
+  formTarget = 1; // everything in at once
+  // lift the canvas out of the panel at exactly the panel's box, then grow it to the viewport
+  const r = canvas.getBoundingClientRect();
+  document.body.classList.add('takeover');
+  document.body.insertBefore(canvas, canvasHome);
+  const setBox = (x, y, w, h) => {
+    Object.assign(canvas.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px', right: 'auto', bottom: 'auto' });
+    resize();
+  };
+  setBox(r.left, r.top, r.width, r.height);
+  zap(0); morphSweep(3);
+  await tween(reduce ? 0.001 : 0.9, ease, t => setBox(r.left * (1 - t), r.top * (1 - t), r.width + (innerWidth - r.width) * t, r.height + (innerHeight - r.height) * t));
+  canvas.removeAttribute('style');
+  fitCanvas();
+  // the line lands: a pulse from the middle, the chromatic flash, a chord
+  if (!reduce) { shock.x = 0; shock.y = 0; shock.age = 0; shock.id++; }
+  flash = reduce ? 0.35 : 1;
+  [0, 7, 12, 16].forEach((s, k) => setTimeout(() => pluck(noteFreq(4) * Math.pow(2, s / 12), (k - 1.5) * 0.4, 1.3, 0.16, 2.2), k * 70));
+  // one line of per-letter spans (the overlay is a centring grid, so the letters need a single parent)
+  signalEl.innerHTML = '<span class="line">' + [...'signal received'].map(ch => `<span>${ch}</span>`).join('') + '</span>';
+  const letters = signalEl.firstChild.children;
+  signalEl.hidden = false;
+  if (window.gsap && !reduce) gsap.from(letters, { opacity: 0, y: 46, filter: 'blur(10px)', duration: 0.7, ease: 'power3.out', stagger: 0.035 });
+  await sleep(2100);
+  if (window.gsap && !reduce) {
+    await new Promise(res => gsap.to(letters, { opacity: 0, y: -34, filter: 'blur(8px)', duration: 0.45, ease: 'power2.in', stagger: 0.02, onComplete: res }));
+  }
+  signalEl.hidden = true;
+  // home: clear the form, jump to the top under cover, and let the contact page go
+  cform.reset(); cform.budget.classList.remove('set');
+  for (const b of chipsEl.children) b.setAttribute('aria-pressed', 'false');
+  formTarget = 0;
+  smoothTo(0, { immediate: true });
+  swapContact(false);
+  morphTo(0);
+  document.body.classList.remove('takeover');
+  takingOver = false; wiping = false;
+  emblem.el.focus({ preventScroll: true });
+  // their draft opens last, so the mail app doesn't land on top of the animation (?nomail: demo it without one)
+  if (!new URLSearchParams(location.search).has('nomail')) location.href = mailto;
+}
 cform.addEventListener('submit', e => {
   e.preventDefault();
+  if (takingOver || wiping) return;
   const f = cform.elements;
   const services = [...chipsEl.querySelectorAll('[aria-pressed="true"]')].map(b => b.textContent);
   const lines = [f.project.value.trim(), '', 'Name: ' + f.name.value.trim(), 'Email: ' + f.email.value.trim()];
@@ -2570,15 +2810,37 @@ cform.addEventListener('submit', e => {
   lines.push('Budget: ' + f.budget.value);
   if (services.length) lines.push('Services: ' + services.join(', '));
   const body = lines.join('\n');
-  location.href = 'mailto:adam.tarr.studio@gmail.com?subject=' + encodeURIComponent('Project inquiry from ' + f.name.value.trim()) + '&body=' + encodeURIComponent(body);
+  audioInit();
+  signalReceived('mailto:adam.tarr.studio@gmail.com?subject=' + encodeURIComponent('Project inquiry from ' + f.name.value.trim()) + '&body=' + encodeURIComponent(body));
 });
+// opening the page picks the energy back up from whatever's already in the form
+emblem.el.addEventListener('click', () => { formTarget = formEnergy(); });
 // ?contact opens straight onto the page (no wipe), handy for sharing and for checking it
 if (new URLSearchParams(location.search).has('contact')) swapContact(true);
+
+// browsers only let audio start from a click or a key, so any of them anywhere wakes it — after that, hovers and
+// scrolling can make sound too
+addEventListener('pointerdown', () => audioInit(), true);
+addEventListener('keydown', () => audioInit(), true);
+
+// scroll clicks: one per SCROLL_STEP px travelled, on the page and inside the contact page alike
+const SCROLL_STEP = 110;
+function scrollClicker(read) {
+  let lastY = read(), lastT = performance.now(), acc = 0;
+  return () => {
+    const y = read(), now = performance.now(), dy = Math.abs(y - lastY);
+    const speed = dy / Math.max((now - lastT) / 1000, 0.008); // px/s
+    lastY = y; lastT = now; acc += dy;
+    if (acc >= SCROLL_STEP) { acc %= SCROLL_STEP; alienClick(speed); }
+  };
+}
+addEventListener('scroll', scrollClicker(() => scrollY), { passive: true });
+contactEl.addEventListener('scroll', scrollClicker(() => contactEl.scrollTop), { passive: true });
 
 // ---------- sim ----------
 const CORNER = [1, 0.62, 0.4, 0.2]; // sq → corner radius fraction
 const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-let last = performance.now(), time = 0;
+let last = performance.now(), time = 0, drift = 0; // drift: the idle wobble's own clock, which the contact form speeds up
 // ?layout=1..4 opens straight into that formation (handy for sharing one)
 {
   const L = +new URLSearchParams(location.search).get('layout');
@@ -2590,6 +2852,8 @@ let last = performance.now(), time = 0;
 }
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 1 / 30); last = now; time += dt;
+  const fe = formFrame(dt); // contact form energy, 0 outside it
+  drift += dt * (1 + 4 * fe);
   // Work is as tall as its grid, and scrolling inside it scrolls the tiles
   const secEls = sectionsEl.children, workEl = secEls[1];
   const wantH = Math.max(innerHeight, Math.ceil(grid().contentCss));
@@ -2647,8 +2911,8 @@ function frame(now) {
     n.ex = (a.ex ?? 0) + ((b.ex ?? 0) - (a.ex ?? 0)) * m;
     n.ey = (a.ey ?? 0) + ((b.ey ?? 0) - (a.ey ?? 0)) * m;
     // idle drift; tiles hold still in the grid so the margins stay true
-    const dr = (n.tile >= 0 ? 1 - workAmt : 1) * 4 * (1 + 3 * orb); // and they bob more when weightless
-    if (!reduce) { tx += Math.sin(time * 0.7 + n.ph) * dr; ty += Math.cos(time * 0.55 + n.ph * 1.3) * dr; }
+    const dr = (n.tile >= 0 ? 1 - workAmt : 1) * 4 * (1 + 3 * orb) * (1 + 1.5 * fe); // and they bob more when weightless, or when the form is busy
+    if (!reduce) { tx += Math.sin(drift * 0.7 + n.ph) * dr; ty += Math.cos(drift * 0.55 + n.ph * 1.3) * dr; }
     let fx = (tx - n.x) * stiff, fy = (ty - n.y) * stiff;
 
     if (mouse.inside && P_.mode !== 'blob') {
@@ -2676,8 +2940,8 @@ function frame(now) {
     const a = layouts[from](q), b = layouts[to](q);
     let [tx, ty] = orbitHome(q, a.x + (b.x - a.x) * m, a.y + (b.y - a.y) * m, orb, dt);
     tx += offX; ty += offY;
-    const qd = 3 * (1 + 3 * orb);
-    if (!reduce) { tx += Math.sin(time * 0.6 + q.ph) * qd; ty += Math.cos(time * 0.5 + q.ph) * qd; }
+    const qd = 3 * (1 + 3 * orb) * (1 + 1.5 * fe);
+    if (!reduce) { tx += Math.sin(drift * 0.6 + q.ph) * qd; ty += Math.cos(drift * 0.5 + q.ph) * qd; }
     let fx = (tx - q.x) * stiff, fy = (ty - q.y) * stiff;
     if (mouse.inside && P_.mode !== 'blob') {
       const dx = q.x - mouse.x, dy = q.y - mouse.y, d = Math.hypot(dx, dy) + 1e-3;
