@@ -1,6 +1,10 @@
 <!doctype html>
 <!-- standards mode: without the doctype the page scrolled through <body>, and Lenis (which drives <html>) couldn't move it -->
 <meta charset="utf-8">
+<!-- device-width so phones get the phone layout (without it they render a 980px desktop page shrunk down);
+     viewport-fit=cover so the env(safe-area-inset-*) paddings see the notch and home bar -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#121313">
 <title>Wes Portfolio V2</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -68,6 +72,9 @@ body {
 .label.on-core { color: var(--bg); }
 .label.on-shell { color: var(--fg); }
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: none; }
+/* the main field is sized to the LARGEST viewport, so a phone's address bar sliding in and out doesn't resize it
+   (a resize reallocates the canvas and rebuilds the reaction-diffusion pattern mid-scroll) */
+body > #c { bottom: auto; height: 100vh; height: 100lvh; } /* only at home: inside the contact panel it fills the panel */
 
 /* --- sticky nav (Figma 184:1603) ------------------------------------------ */
 .nav {
@@ -118,6 +125,51 @@ body.contact-open .nav { background: #121313; border-bottom: 2px solid #6b6b6b; 
 }
 @media (max-width: 560px) { .nav-links { display: none; } }
 
+/* --- phone menu: below 560px the links fold into a full-screen menu ------------ */
+.menu-btn {
+  display: none; position: relative; width: 44px; height: 44px; margin: 2px 8px 0 auto; padding: 0;
+  border: 1px solid var(--ink); border-radius: 4px; background: none; cursor: pointer; color: var(--ink);
+}
+/* three rungs, drawn like the HUD slider's ticks; they fold into an × while the menu is open */
+.menu-btn span {
+  position: absolute; left: 11px; right: 11px; height: 6px; box-sizing: border-box;
+  border-block: 1px solid currentColor; background: rgba(255, 255, 255, 0.1);
+  transition: transform 0.3s ease, opacity 0.2s ease;
+}
+.menu-btn span:nth-child(1) { top: 11px; } .menu-btn span:nth-child(2) { top: 19px; } .menu-btn span:nth-child(3) { top: 27px; }
+body.menu-open .menu-btn span:nth-child(1) { transform: translateY(8px) rotate(45deg); }
+body.menu-open .menu-btn span:nth-child(2) { opacity: 0; }
+body.menu-open .menu-btn span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
+.menu-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 560px) {
+  .menu-btn { display: block; }
+  .nav { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+  .logo { width: 104px; margin-top: 8px; }
+}
+.mnav {
+  position: fixed; inset: 0; z-index: 29; box-sizing: border-box;
+  padding: calc(96px + env(safe-area-inset-top, 0px)) 24px calc(32px + env(safe-area-inset-bottom, 0px));
+  background: rgba(18, 19, 19, 0.94); backdrop-filter: blur(8px);
+  display: flex; flex-direction: column; justify-content: space-between; color-scheme: dark;
+}
+.mnav[hidden] { display: none; }
+.mnav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mnav button {
+  display: flex; align-items: baseline; gap: 14px; width: 100%; padding: 10px 0; text-align: left;
+  font: 700 clamp(30px, 10.5vw, 46px)/1 var(--display); text-transform: uppercase; color: #fff;
+  background: none; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.14); cursor: pointer;
+}
+.mnav button small { font: 400 11px var(--mono); letter-spacing: 0.12em; color: var(--c); }
+.mnav button[aria-current="true"], .mnav button:active { color: var(--c); text-shadow: 0 0 18px var(--c); }
+.mnav button:focus-visible { outline: none; color: var(--c); }
+.mnav p { margin: 0; font-size: 13px; line-height: 1.5; color: #fff; max-width: 30ch; }
+.mnav .mnav-contact {
+  margin-top: 18px; font: 400 14px var(--mono); letter-spacing: 1.96px; text-transform: uppercase;
+  color: #0f0f0f; background: var(--violet); border: 0; border-inline: 2px solid #fff; border-radius: 4px; padding: 13px 18px;
+  display: block; width: 100%; text-align: center;
+}
+body.menu-open .hud, body.menu-open .labels, body.menu-open .thumbs, body.menu-open .filters { visibility: hidden; }
+
 /* --- beat 3: the tile field (wipe) ----------------------------------------- */
 .wipe-tiles { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; }
 .wipe-tile { position: absolute; background: #000; transform: translate(-50%, -50%) rotate(45deg) scale(0); }
@@ -164,10 +216,44 @@ body.contact-open .nav { background: #121313; border-bottom: 2px solid #6b6b6b; 
 .switch:focus-visible, .joy:focus-visible, .vslider:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
 .mission { margin: 0; font-size: 16px; color: var(--ink); white-space: nowrap; text-align: center; flex: 1 1 auto; }
 @media (max-width: 1100px) { .mission { display: none; } }
-@media (max-width: 700px) {
-  .vslider { height: 180px; }
-  .vslider .tick { height: 14px; }
+
+/* --- compact HUD: phones, and anything short (landscape phones) --------------------------------------------
+   One row along the bottom: the dot slider lies down and stretches, the switches sit side by side, the joystick
+   shrinks, and the scope steps out. On a portrait phone the mission line comes back above the row. Every control
+   gets a hit area of at least 44px around it (the ::after boxes), without changing how it's drawn. */
+@media (max-width: 700px), (max-height: 560px) {
+  .hud {
+    left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    flex-direction: column; align-items: stretch; gap: 12px;
+  }
+  .hud-controls { align-items: center; gap: 14px; width: 100%; }
+  .hud-switches { flex-direction: row; gap: 10px; }
+  .vslider {
+    flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 12px;
+    flex-direction: row; cursor: ew-resize;
+  }
+  .vslider .tick { width: 12px; height: 6px; border-block: 0; border-inline: 1px solid var(--ink); }
+  .vslider .knob { top: 6px; }
+  .switch { width: 52px; }
+  .switch[aria-checked="true"] .knob { transform: translateX(24px); }
+  .switch .icon { left: 26px; }
+  .joy { width: 64px; height: 64px; border-radius: 5px; }
+  .joy img { width: 64px; height: 64px; }
+  .switch::after, .vslider::after, .joy::after { content: ''; position: absolute; inset: -8px; }
+  .scope { display: none; }
 }
+@media (max-width: 700px) and (min-height: 561px) {
+  .mission { display: block; order: -1; white-space: normal; font-size: 12px; line-height: 1.45; text-wrap: balance; }
+  /* portrait: two rows so the slider gets the width — slider over the switches, joystick down the right */
+  .hud-controls { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "slider joy" "switches joy"; gap: 10px 14px; }
+  .vslider { grid-area: slider; height: 28px; }
+  .vslider .knob { top: 4px; }
+  .hud-switches { grid-area: switches; }
+  .joy { grid-area: joy; align-self: end; width: 70px; height: 70px; }
+  .joy img { width: 70px; height: 70px; }
+}
+.switch, .joy { flex: none; }
 body.in-work .hud, body.contact-open .hud, body.at-foot .hud { opacity: 0; pointer-events: none; }
 body.in-work .hud > *, body.contact-open .hud > *, body.at-foot .hud > * { pointer-events: none; }
 /* the footer in the main flow: opaque and above the fixed field, dark even when inverted */
@@ -218,7 +304,6 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 }
 /* pinned to the box: left in flow, the canvas's default 150px height stretched it, and drawScope sizes the buffer from that */
 .scope canvas { position: absolute; inset: 4px 6px; width: calc(100% - 12px); height: calc(100% - 8px); cursor: default; }
-@media (max-width: 700px) { .scope { width: 140px; height: 56px; } }
 .check input { accent-color: var(--accent); margin: 0; }
 /* work thumbnails: DOM tiles riding on the shader's tile shapes */
 .thumbs { position: fixed; inset: 0; pointer-events: none; }
@@ -370,7 +455,12 @@ body.in-caps .hud > * { pointer-events: none; }
   .svc-more ul { font-size: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { .svc-more { transition: none; } }
-@media (max-width: 700px) { .filters { left: 16px; right: 16px; justify-content: flex-start; } }
+/* phones: the tags run in one row you can swipe sideways, instead of wrapping into a wall over the grid */
+@media (max-width: 700px) {
+  .filters { left: 0; right: 0; padding: 0 16px; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  .filters button { flex: 0 0 auto; padding: 8px 12px; }
+}
 @media (max-width: 900px) { .filters { top: calc(80px + env(safe-area-inset-top, 0px)); } }
 @media (prefers-reduced-motion: reduce) { .filters, .hud, .switch .knob, .switch .icon, .nav-links button { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .thumb img { transition: none; } }
@@ -396,6 +486,7 @@ body.takeover .nav { background: transparent; border-color: transparent; }
 .signal[hidden] { display: none; }
 .signal .line { display: block; padding: 0 16px; }
 .signal .line span { display: inline-block; white-space: pre; }
+.signal .line .w { white-space: nowrap; }
 
 /* --- contact page (Figma 162:489) — the goo canvas moves into .contact-goo while it's open --- */
 .contact {
@@ -464,8 +555,39 @@ select.cfield.set { color: #efefef; }
   .contact-stage { flex-direction: column; }
   .contact-goo { min-height: 60vh; }
   .crow, .chead { flex-direction: column; }
+  /* stacked, the fields keep their own height — the row's flex: 1 1 0 would collapse them to their text */
+  .crow > * { flex: none; }
   .chead p { width: auto; max-width: none; }
   .ccomm .cline { flex-direction: column; align-items: flex-start; }
+}
+/* landscape phones: side by side again, the goo pinned in view while the form scrolls past it */
+@media (max-height: 560px) and (min-width: 600px) {
+  .contact-stage { flex-direction: row; align-items: flex-start; }
+  .contact-goo { position: sticky; top: 0; height: calc(100vh - 72px); height: calc(100svh - 72px); min-height: 0; flex: 4 1 0; }
+  .cmodal { flex: 6 1 0; }
+}
+@media (max-width: 560px) {
+  .contact-goo { min-height: 52vh; padding: 0; }
+  .contact-goo canvas { inset: 0; width: 100%; height: 100%; }
+  .contact-stage { border-inline: 0; }
+  .cmodal { border-inline: 0; padding: 12px 16px 20px; }
+  .cmodal form { gap: 32px; }
+  .chead h2 { font-size: 28px; }
+  /* iOS zooms the page into any field under 16px when it takes focus */
+  .cfield { font-size: 16px; letter-spacing: 1px; }
+  .crow { gap: 16px; }
+  .cfields { gap: 16px; }
+  .chips button { padding: 10px 12px; font-size: 12px; letter-spacing: 1.2px; }
+  .csend { width: 100%; }
+  .ccomm { padding: 28px 16px 48px; gap: 40px; }
+  /* "commmunicate" is one long word: sized to the screen so it never runs off the side */
+  .ccomm h2 { font-size: 8vw; margin-bottom: 24px; }
+  .ccomm .cols { gap: 28px; }
+  .ccol a, .ccol button { font-size: 20px; overflow-wrap: anywhere; }
+  .ccomm .cline img { width: 112px; height: 112px; align-self: flex-end; }
+  .ccomm .avail { font-size: 12px; line-height: 1.5; }
+  .cfoot { padding: 28px 16px calc(28px + env(safe-area-inset-bottom, 0px)); gap: 28px; }
+  .cfoot .bottom { flex-direction: column; gap: 8px; font-size: 12px; }
 }
 </style>
 
@@ -497,7 +619,17 @@ select.cfield.set { color: #efefef; }
     </svg>
   </a>
   <nav class="nav-links" id="navlinks" aria-label="Sections"></nav>
+  <button class="menu-btn" id="menu-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mnav"><span></span><span></span><span></span></button>
 </header>
+
+<!-- phones: the section links, full screen -->
+<div class="mnav" id="mnav" hidden>
+  <ul id="mnav-links"></ul>
+  <div>
+    <p>I make things come to life through animation, 3D, and interactive web.</p>
+    <button class="mnav-contact" id="mnav-contact" type="button">Send a signal</button>
+  </div>
+</div>
 
 <div class="hud" id="hud">
   <div class="hud-controls">
@@ -1416,6 +1548,7 @@ const nearest = (x, y, pool) => pool.reduce((b, n) => {
 const labelsEl = document.getElementById('labels');
 const sectionsEl = document.getElementById('sections');
 const navLinks = document.getElementById('navlinks');
+const mnavLinks = document.getElementById('mnav-links'), mnavBtns = [];
 const labels = [];
 const navBtns = [];
 // set once the contact page exists; a nav link closes it before scrolling
@@ -1445,6 +1578,14 @@ SECTIONS.forEach((sec, si) => {
     const off = () => { if (tint.target === c) tint.target = null; };
     b.addEventListener('pointerenter', on); b.addEventListener('pointerleave', off);
     b.addEventListener('focus', on); b.addEventListener('blur', off);
+    // and its twin in the phone menu: no hover on a phone, so the rhythm and the colour come on the tap
+    const li = document.createElement('li'), mb = document.createElement('button');
+    mb.type = 'button';
+    mb.innerHTML = `<span></span><small>0${si}</small>`;
+    mb.firstChild.textContent = sec.name;
+    mb.style.setProperty('--c', `rgb(${c.join(',')})`);
+    mb.addEventListener('click', () => { on(); setTimeout(off, 900); goSection(si); });
+    li.appendChild(mb); mnavLinks.appendChild(li); mnavBtns[si] = mb;
   }
   for (const [text, x, y] of sec.labels) {
     const node = nearest(x, y, anchorPool);
@@ -1549,7 +1690,7 @@ function setSection(i) {
   if (i === section) return;
   const first = section < 0;
   section = i;
-  navBtns.forEach((b, j) => b && b.setAttribute('aria-current', String(j === i)));
+  for (const set of [navBtns, mnavBtns]) set.forEach((b, j) => b && b.setAttribute('aria-current', String(j === i)));
   // each section has its own arrangement of the field
   if (!first && !contactOpen) morphTo(SECTIONS[i].layout);
 }
@@ -1855,13 +1996,39 @@ const arrGa = new Float32Array(GN * 4), arrGb = new Float32Array(GN * 4);
 
 // ---------- sizing ----------
 let W = 0, H = 0, dpr = 1, scale = 1;
+// Render resolution: at most 1.5× the CSS size, and stepped down (never back up, so it can't oscillate) when the
+// GPU can't hold ~40fps — see the perf check in frame(). Phones are the usual case.
+const DPR_STEPS = [1.5, 1.25, 1, 0.8];
+let dprStep = 0;
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-  W = Math.round(canvas.clientWidth * dpr);
-  H = Math.round(canvas.clientHeight * dpr);
-  canvas.width = W; canvas.height = H;
+  dpr = Math.min(window.devicePixelRatio || 1, DPR_STEPS[dprStep]);
+  const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  // setting canvas.width clears and reallocates it, so only when something really changed
+  if (w !== canvas.width || h !== canvas.height) { canvas.width = w; canvas.height = h; }
+  W = w; H = h;
   gl.viewport(0, 0, W, H);
-  scale = Math.min(W / 980, H / 1060);
+  // the comp is ~980 × 1060 world units; a portrait phone is width-bound, and most of that width is the faint
+  // outer rings, so it fits to 860 there and lets the rings run off the sides a little
+  scale = Math.min(W / (W < H * 0.75 ? 860 : 980), H / 1060);
+}
+// Averages real frame times over 2s windows, after a 3s warm-up (shader compile, RD burn-in). Gaps over 200ms
+// are a hidden or throttled tab, not a slow GPU, so they don't count.
+const PERF_TARGET = 1 / 40, PERF_WINDOW = 2, PERF_WARMUP = 3;
+const perf = { t: 0, n: 0, age: 0 };
+function perfCheck(rawDt) {
+  perf.age += Math.min(rawDt, 0.2);
+  if (rawDt > 0.2 || perf.age < PERF_WARMUP || dprStep >= DPR_STEPS.length - 1) return;
+  perf.t += rawDt; perf.n++;
+  if (perf.t < PERF_WINDOW) return;
+  if (perf.t / perf.n > PERF_TARGET) {
+    // jump to the next step that actually lowers the resolution (on a 1× screen, 1.5 → 1.25 changes nothing)
+    const dev = window.devicePixelRatio || 1, cur = Math.min(dev, DPR_STEPS[dprStep]);
+    let next = dprStep + 1;
+    while (next < DPR_STEPS.length && Math.min(dev, DPR_STEPS[next]) >= cur) next++;
+    if (next < DPR_STEPS.length) { dprStep = next; resize(); }
+    else dprStep = DPR_STEPS.length - 1; // nothing lower to go to: stop checking
+  }
+  perf.t = perf.n = 0;
 }
 addEventListener('resize', resize);
 resize();
@@ -2280,10 +2447,27 @@ updateFilters();
 // the bar's height (and so the grid's top) settles once the webfont is in
 document.fonts?.ready.then(() => { gridVer++; }).catch(() => {});
 
+// A mouse pulses on press. A finger has to tap first: on a phone every scroll swipe starts with a pointerdown
+// on the goo, and pulsing (and morphing) on each one would fire the whole show every time you scroll.
+const TAP_SLOP = 12, TAP_MS = 350; // px a finger may wander, and how long it may stay down, and still be a tap
+let tapStart = null;
 canvas.addEventListener('pointerdown', e => {
   [mouse.tx, mouse.ty] = toWorld(e);
   if (!mouse.inside) { mouse.x = mouse.tx; mouse.y = mouse.ty; }
   mouse.inside = true; mouse.down = true;
+  if (e.pointerType === 'touch') { tapStart = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }; return; }
+  pulseAt();
+});
+canvas.addEventListener('pointerup', e => {
+  const s = tapStart; tapStart = null;
+  if (!s || s.id !== e.pointerId) return;
+  if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > TAP_SLOP || performance.now() - s.t > TAP_MS) return;
+  [mouse.tx, mouse.ty] = toWorld(e);
+  pulseAt();
+});
+// the browser took the gesture for a scroll: no tap, and the finger's blob goes away
+canvas.addEventListener('pointercancel', () => { tapStart = null; mouse.inside = false; mouse.down = false; });
+function pulseAt() {
   audioInit();
   const pan = mouse.rawX / 450;
   const pitch = Math.round((mouse.tx + 450) / 900 * 10);
@@ -2294,7 +2478,7 @@ canvas.addEventListener('pointerdown', e => {
   else { shock.x = mouse.tx; shock.y = mouse.ty; }
   flash = reduce ? 0.35 : 1;
   if (morphClick.checked && to !== WORK && to !== CAPS) morph(); // clicks in a grid shouldn't break it up
-});
+}
 addEventListener('pointerup', () => { mouse.down = false; });
 
 // ---------- HUD (Figma 184:1708): drives the same inputs as the debug panel, so the two never disagree ----------
@@ -2305,10 +2489,15 @@ const vSlider = document.getElementById('vslider'), vKnob = vSlider.querySelecto
 const DOT_MAX = nodes.length;
 vSlider.setAttribute('aria-valuemin', BASE);
 vSlider.setAttribute('aria-valuemax', DOT_MAX);
-const vTravel = () => vSlider.clientHeight - 8 - 18; // 4px inset at each end, 18px knob
+// the compact HUD lays the slider down (more dots to the right); the full one stands it up (more dots at the top)
+const vFlat = () => vSlider.clientWidth > vSlider.clientHeight;
+const vTravel = () => (vFlat() ? vSlider.clientWidth : vSlider.clientHeight) - 8 - 18; // 4px inset at each end, 18px knob
 function syncDots() {
   const c = +countEl.value, t = Math.max(0, (c - BASE) / Math.max(1, DOT_MAX - BASE));
-  vKnob.style.top = (4 + (1 - t) * vTravel()).toFixed(1) + 'px';
+  const flat = vFlat();
+  vSlider.setAttribute('aria-orientation', flat ? 'horizontal' : 'vertical');
+  vKnob.style.top = flat ? '' : (4 + (1 - t) * vTravel()).toFixed(1) + 'px';
+  vKnob.style.left = flat ? (4 + t * vTravel()).toFixed(1) + 'px' : '';
   vSlider.setAttribute('aria-valuenow', c);
 }
 function setDots(c) {
@@ -2319,7 +2508,8 @@ function setDots(c) {
 countEl.addEventListener('input', syncDots);
 const dotsAt = e => {
   const r = vSlider.getBoundingClientRect();
-  setDots(BASE + (1 - (e.clientY - r.top - 4 - 9) / vTravel()) * (DOT_MAX - BASE));
+  const t = vFlat() ? (e.clientX - r.left - 4 - 9) / vTravel() : 1 - (e.clientY - r.top - 4 - 9) / vTravel();
+  setDots(BASE + t * (DOT_MAX - BASE));
 };
 vSlider.addEventListener('pointerdown', e => { vSlider.setPointerCapture(e.pointerId); audioInit(); dotsAt(e); });
 vSlider.addEventListener('pointermove', e => { if (vSlider.hasPointerCapture(e.pointerId)) dotsAt(e); });
@@ -2401,13 +2591,18 @@ swInvert.addEventListener('click', () => setInvert(!invert));
 // joystick: while held, deflection drives a velocity (the limiter keeps the comp inside a disc so it can't be thrown
 // off-screen); let go and the comp drifts slowly back to centre — the push is only ever temporary
 const joy = document.getElementById('joy'), joyKnob = document.getElementById('joy-knob');
-const JOY_R = 32, COMP_LIMIT = 220, COMP_SPEED = 420;
+const JOY_R_FRAC = 0.32; // knob travel as a fraction of the joystick's width (32px on the 100px desktop one)
+let joyW = 100; // cached: reading clientWidth every frame, right after writing the knob transform, would force a reflow
+const joyR = () => joyW * JOY_R_FRAC;
+new ResizeObserver(() => { joyW = joy.clientWidth || joyW; }).observe(joy);
+const COMP_LIMIT = 220, COMP_SPEED = 420;
 const COMP_RETURN = 1.2; // 1/s: ~70% of the way home after a second, settled in about three
 const stick = { x: 0, y: 0, held: false, kx: NaN, ky: NaN };
 const comp = { x: 0, y: 0, k: 1 };
 const stickAt = e => {
   const r = joy.getBoundingClientRect();
-  let x = (e.clientX - r.left - r.width / 2) / JOY_R, y = (e.clientY - r.top - r.height / 2) / JOY_R;
+  const R = r.width * JOY_R_FRAC;
+  let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R;
   const l = Math.hypot(x, y);
   if (l > 1) { x /= l; y /= l; }
   stick.x = x; stick.y = y;
@@ -2450,7 +2645,7 @@ function joyFrame(dt, k) {
     const g = Math.exp(-dt * COMP_RETURN); comp.x *= g; comp.y *= g; // …and the comp follows it home, slowly
   }
   comp.k += (k - comp.k) * (1 - Math.exp(-dt * 6));
-  const kx = Math.round(stick.x * JOY_R * 10) / 10, ky = Math.round(stick.y * JOY_R * 10) / 10;
+  const R = joyR(), kx = Math.round(stick.x * R * 10) / 10, ky = Math.round(stick.y * R * 10) / 10;
   if (kx !== stick.kx || ky !== stick.ky) { stick.kx = kx; stick.ky = ky; joyKnob.style.transform = `translate(${kx}px, ${ky}px)`; }
   // mirror only simulates the left half, so a sideways shift would tear it down the seam
   return [mirror ? 0 : comp.x * comp.k, comp.y * comp.k];
@@ -2499,6 +2694,9 @@ function drainTo(x, y) {
   pourState.full = false;
 }
 logo.addEventListener('pointerenter', e => { fillFrom(...edgePoint(e)); wesVoice(); });
+// a tap gives no hover to speak of: the pour runs on the press, and the voice on the lift (the audio may only just
+// have been allowed to start by then)
+logo.addEventListener('pointerup', e => { if (e.pointerType === 'touch') { audioInit(); wesVoice(); } });
 logo.addEventListener('pointerleave', e => drainTo(...edgePoint(e)));
 logo.addEventListener('focus', () => fillFrom(0, LOGO_H / 2));
 logo.addEventListener('blur', () => drainTo(LOGO_W, LOGO_H / 2));
@@ -2671,17 +2869,47 @@ async function setContact(open, { focus = true } = {}) {
   }
   if (focus) (open ? document.getElementById('contact-title') : emblem.el).focus({ preventScroll: true });
 }
-emblem.el.addEventListener('click', () => { audioInit(); setContact(!contactOpen); });
-addEventListener('keydown', e => { if (e.key === 'Escape' && contactOpen) setContact(false); });
+emblem.el.addEventListener('click', () => { audioInit(); setMenu(false); setContact(!contactOpen); });
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (menuOpen) setMenu(false, { focus: true }); // the menu sits on top, so it goes first
+  else if (contactOpen) setContact(false);
+});
 goSection = async si => {
+  setMenu(false);
   if (contactOpen) await setContact(false, { focus: false });
   smoothTo(sectionsEl.children[si].offsetTop);
 };
 logo.addEventListener('click', async e => {
   e.preventDefault();
+  setMenu(false);
   if (contactOpen) await setContact(false, { focus: false });
   smoothTo(0);
 });
+
+// ---------- phone menu (below 560px the nav links fold into it) ----------
+const menuBtn = document.getElementById('menu-btn'), mnav = document.getElementById('mnav');
+let menuOpen = false;
+function setMenu(open, { focus = false } = {}) {
+  if (open === menuOpen) return;
+  menuOpen = open;
+  mnav.hidden = !open;
+  document.body.classList.toggle('menu-open', open);
+  menuBtn.setAttribute('aria-expanded', String(open));
+  menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Menu');
+  // the page underneath holds still while the menu's up
+  if (lenis) { if (open) lenis.stop(); else if (!contactOpen) lenis.start(); }
+  document.documentElement.style.overflow = open || contactOpen ? 'hidden' : '';
+  tick(noteFreq(open ? 12 : 8), 0, 0.05, 'square', 0.06);
+  if (open) {
+    if (window.gsap && !reduce) gsap.from(mnav.querySelectorAll('li, p, .mnav-contact'), { opacity: 0, x: -28, duration: 0.5, ease: 'power3.out', stagger: 0.06 });
+    if (focus) mnav.querySelector('button').focus({ preventScroll: true });
+  } else if (focus) menuBtn.focus({ preventScroll: true });
+}
+menuBtn.addEventListener('click', e => setMenu(!menuOpen, { focus: e.detail === 0 })); // detail 0: a keyboard press
+document.getElementById('mnav-contact').addEventListener('click', () => { setMenu(false); audioInit(); setContact(true); });
+// rotating to a width that shows the inline links again closes it
+matchMedia('(max-width: 560px)').addEventListener('change', e => { if (!e.matches) setMenu(false); });
 // the same footer closes the main flow; its own "contact" opens the page rather than scrolling it
 const mainFoot = document.getElementById('sitefoot').cloneNode(true);
 mainFoot.removeAttribute('id');
@@ -2777,9 +3005,11 @@ async function signalReceived(mailto) {
   if (!reduce) { shock.x = 0; shock.y = 0; shock.age = 0; shock.id++; }
   flash = reduce ? 0.35 : 1;
   [0, 7, 12, 16].forEach((s, k) => setTimeout(() => pluck(noteFreq(4) * Math.pow(2, s / 12), (k - 1.5) * 0.4, 1.3, 0.16, 2.2), k * 70));
-  // one line of per-letter spans (the overlay is a centring grid, so the letters need a single parent)
-  signalEl.innerHTML = '<span class="line">' + [...'signal received'].map(ch => `<span>${ch}</span>`).join('') + '</span>';
-  const letters = signalEl.firstChild.children;
+  // per-letter spans grouped by word (so a phone wraps between the words, never inside one), under one parent
+  // (the overlay is a centring grid)
+  signalEl.innerHTML = '<span class="line">' + 'signal received'.split(' ')
+    .map(w => '<span class="w">' + [...w].map(ch => `<span>${ch}</span>`).join('') + '</span>').join(' ') + '</span>';
+  const letters = signalEl.querySelectorAll('.w > span');
   signalEl.hidden = false;
   if (window.gsap && !reduce) gsap.from(letters, { opacity: 0, y: 46, filter: 'blur(10px)', duration: 0.7, ease: 'power3.out', stagger: 0.035 });
   await sleep(2100);
@@ -2822,6 +3052,9 @@ if (new URLSearchParams(location.search).has('contact')) swapContact(true);
 // scrolling can make sound too
 addEventListener('pointerdown', () => audioInit(), true);
 addEventListener('keydown', () => audioInit(), true);
+// a finger only counts as permission when it lifts (touchend / pointerup), not when it lands — so phones need these
+addEventListener('pointerup', () => audioInit(), true);
+addEventListener('touchend', () => audioInit(), { capture: true, passive: true });
 
 // scroll clicks: one per SCROLL_STEP px travelled, on the page and inside the contact page alike
 const SCROLL_STEP = 110;
@@ -2851,7 +3084,9 @@ let last = performance.now(), time = 0, drift = 0; // drift: the idle wobble's o
   }
 }
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 1 / 30); last = now; time += dt;
+  const rawDt = (now - last) / 1000;
+  const dt = Math.min(rawDt, 1 / 30); last = now; time += dt;
+  perfCheck(rawDt);
   const fe = formFrame(dt); // contact form energy, 0 outside it
   drift += dt * (1 + 4 * fe);
   // Work is as tall as its grid, and scrolling inside it scrolls the tiles
