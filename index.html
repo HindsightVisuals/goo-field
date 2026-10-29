@@ -376,14 +376,14 @@ body.in-caps .hud > * { pointer-events: none; }
 .sections section.caps { height: auto; min-height: 100vh; padding-bottom: 96px; }
 /* the heading pins just under the sticky nav; each card pins below it, one step lower than the last, and
    the next card slides over it. --step is how much of a covered card stays visible. */
-.caps { --hero-h: calc(var(--nav-h) + 40px + clamp(22px, 3.35vw, 48px)); --step: 108px; }
+.caps { --hero-h: calc(var(--nav-h) + 24px); --step: 108px; } /* no visible heading now: cards pin just under the nav */
 .caps-hero { position: sticky; top: var(--nav-h); padding: 24px 24px 16px; box-sizing: border-box; z-index: 1; }
 .caps-hero h2.goo { color: transparent; }
 .caps-hero h2 {
   margin: 0; font-family: var(--f-loos-x); font-weight: 700; font-size: clamp(22px, 3.35vw, 48px);
   line-height: 1; color: #fff; letter-spacing: 0;
 }
-.svc-list { display: grid; gap: 32px; padding: 0 48px 45vh; margin-top: 178px; position: relative; }
+.svc-list { display: grid; gap: 32px; padding: 0 48px 45vh; margin-top: calc(var(--nav-h) + 40px); position: relative; }
 .svc { position: sticky; top: calc(var(--hero-h) + var(--i) * var(--step)); }
 /* cards ride their shader tiles (transform set per frame); the gaps let the cursor reach the field */
 .svc { opacity: 0; will-change: transform, opacity; cursor: pointer; }
@@ -450,7 +450,7 @@ body.in-caps .hud > * { pointer-events: none; }
 .svc-toggle:focus-visible, .svc-meta .see:focus-visible { outline: 1px solid var(--c); outline-offset: 3px; }
 @media (max-width: 700px) {
   .caps { --step: 72px; }
-  .svc-list { padding: 0 16px 45vh; margin-top: 120px; }
+  .svc-list { padding: 0 16px 45vh; margin-top: calc(var(--nav-h) + 24px); }
   .svc-id { flex-basis: 40px; padding: 6px; }
   .svc-id span { font-size: 16px; }
   .svc-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -1650,7 +1650,8 @@ const SVC_DESC = 'Web experiences that show, not tell. Build an experience that 
 const SVC_TOOLS = ['GLSL', 'three.js', 'blender', 'agentic dev', 'HTML', 'JS', 'CSS', 'Webflow', 'Shopify'];
 const capsSec = sectionsEl.children[SECTIONS.findIndex(x => x.name === 'Capabilities')];
 capsSec.classList.add('caps');
-capsSec.innerHTML = `<div class="caps-hero"><h2>capabilities</h2></div><div class="svc-list"></div>`;
+// the visible "capabilities" heading is gone (the nav already says where you are); screen readers keep one
+capsSec.innerHTML = `<h2 class="sr">Capabilities</h2><div class="svc-list"></div>`;
 const svcList = capsSec.querySelector('.svc-list');
 const svcCards = [];
 SERVICES.forEach((sv, i) => {
@@ -2239,7 +2240,7 @@ addEventListener('resize', () => { clearTimeout(rdTimer); rdTimer = setTimeout((
 // green for the letter shapes and an 18px blur in blue so the field can reach out and bridge in.
 // Needs canvas filters; without them the DOM heading simply stays visible.
 const goohead = (() => {
-  const h2 = capsSec.querySelector('h2');
+  const h2 = capsSec.querySelector('.caps-hero h2'); // none since the heading was cut, so this stays off
   const cv = document.createElement('canvas');
   const cx = cv.getContext('2d');
   if (!h2 || !cx || !('filter' in cx)) return null;
