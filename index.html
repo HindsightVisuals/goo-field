@@ -201,11 +201,15 @@ body.in-caps .panel, body.in-caps .scope { opacity: 0; pointer-events: none; }
   line-height: 1; color: #fff; letter-spacing: 0;
 }
 .svc-list { display: grid; gap: 16px; padding: 0 48px; position: relative; }
+/* cards ride their shader tiles (transform set per frame); the gaps let the cursor reach the field */
+.svc { opacity: 0; will-change: transform, opacity; cursor: pointer; }
+.sections .svc-list { pointer-events: none; }
+.sections .svc { pointer-events: auto; }
 /* clear the fixed section nav on the right so it never sits on the expand buttons */
 @media (min-width: 701px) { .svc-list { padding-right: 150px; } }
 .svc { display: flex; gap: 8px; align-items: stretch; min-height: 200px; color: #fff; }
 .svc-id {
-  flex: 0 0 65px; box-sizing: border-box; background: rgba(0, 0, 0, 0.5); border-top: 4px solid var(--c);
+  flex: 0 0 65px; box-sizing: border-box; background: transparent; border-top: 4px solid var(--c);
   display: flex; align-items: center; justify-content: center; padding: 8px 10px;
 }
 .svc-id span {
@@ -226,7 +230,7 @@ body.in-caps .panel, body.in-caps .scope { opacity: 0; pointer-events: none; }
 .svc-meta .see:hover { filter: brightness(1.12); }
 .svc-body {
   flex: 1 1 auto; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
-  background: #222; border-top: 4px solid #000; border-radius: 4px; padding: 10px 11px;
+  background: transparent; border-top: 4px solid #000; border-radius: 4px; padding: 10px 11px;
 }
 .svc.open .svc-body { padding: 10px 16px; }
 .svc-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
@@ -786,6 +790,13 @@ const tileNode = [];
     if (best) { best.tile = i; tileNode[i] = best; }
   });
 }
+// capabilities cards: two more shells each (the body and the serv.00X label column)
+const capNode = [];
+{
+  const pool = nodes.filter(n => n.layer === 1 && !n.rox && !n.roy && n.tile < 0);
+  for (const n of nodes) n.cap = -1;
+  for (let k = 0; k < 8 && k < pool.length; k++) { pool[k].cap = k; capNode[k] = pool[k]; }
+}
 
 function grid() {
   const key = W + 'x' + H + ':' + gridVer;
@@ -859,9 +870,48 @@ layouts.push(n => {
   }
   return edgeRing(n, G, n.layer === 3 ? 1 : 0.5);
 });
-const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder', 'Work'];
+// 6 capabilities: each card's body + label become shader tiles sized from the DOM boxes; the
+// goo core beads in the gaps between them. Reached by scrolling to the cards.
+const CAPS = 6;
+let capsGeo = null, capsAmt = 0, capsScrollY = scrollY;
+function measureCaps() {
+  const u = dpr / scale, vw = W / scale, vh = H / scale;
+  const toW = (x, y) => [(x * dpr - W / 2) / scale, (y * dpr - H / 2) / scale];
+  const rects = [], gut = [];
+  let prevBottom = null;
+  svcCards.forEach((C, i) => {
+    // boxes measured without the per-frame ride offset, so the tiles chase the layout, not themselves
+    const ox = C.dx || 0, oy = C.dy || 0;
+    for (const [k, part] of [[2 * i, C.body], [2 * i + 1, C.id]]) {
+      const r = part.getBoundingClientRect();
+      const [cx, cy] = toW(r.left - ox + r.width / 2, r.top - oy + r.height / 2);
+      rects[k] = { cx, cy, hw: r.width * u / 2, hh: r.height * u / 2 };
+    }
+    const card = C.el.getBoundingClientRect();
+    const [x0, y0] = toW(card.left - ox, card.top - oy), [x1, y1] = toW(card.right - ox, card.bottom - oy);
+    const midX = (rects[2 * i + 1].cx + rects[2 * i + 1].hw + rects[2 * i].cx - rects[2 * i].hw) / 2;
+    gut.push([midX, y0, midX, y1]);
+    if (prevBottom !== null) { const y = (prevBottom + y0) / 2; gut.push([x0, y, x1, y]); }
+    prevBottom = y1;
+  });
+  const glen = gut.reduce((t, g) => t + Math.hypot(g[2] - g[0], g[3] - g[1]), 0) || 1;
+  return { u, vw, vh, rects, gut, glen };
+}
+layouts.push(n => {
+  const C = capsGeo || (capsGeo = measureCaps());
+  if (n.cap >= 0 && C.rects[n.cap]) {
+    const r = C.rects[n.cap], m = Math.max(1, Math.min(r.hw, r.hh));
+    return { x: r.cx, y: r.cy, a: 0, rs: m / (n.r * 0.92), cr: Math.min(0.9, 4 * C.u / m), ex: r.hw - m, ey: r.hh - m };
+  }
+  if (n.layer === 0) {
+    const [x, y] = gutterPoint(C, n.ci * 0.6180339 + 0.05);
+    return { x, y, a: 0, rs: Math.min(1, 4 * C.u / n.r) };
+  }
+  return edgeRing(n, C, n.layer === 3 ? 1 : 0.5);
+});
+const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder', 'Work', 'Capabilities'];
 // background orbit lines take the layout's shape too: weights for circle, square, diamond, drum
-const LAYOUT_ORB = [[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0]];
+const LAYOUT_ORB = [[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 1, 0, 0]];
 let from = 0, to = 0, morphT = 1, workAmt = 0;
 const morphBtn = document.getElementById('morph');
 
@@ -986,6 +1036,7 @@ const capsSec = sectionsEl.children[SECTIONS.findIndex(x => x.name === 'Capabili
 capsSec.classList.add('caps');
 capsSec.innerHTML = `<div class="caps-hero"><h2>capabilities</h2></div><div class="svc-list"></div>`;
 const svcList = capsSec.querySelector('.svc-list');
+const svcCards = [];
 SERVICES.forEach((sv, i) => {
   const el = document.createElement('article');
   el.className = 'svc' + (i === 0 ? ' open' : ''); // Figma frame: 3D starts open
@@ -1018,6 +1069,7 @@ SERVICES.forEach((sv, i) => {
       </div>
     </div>`;
   svcList.appendChild(el);
+  svcCards.push({ el, body: el.querySelector('.svc-body'), id: el.querySelector('.svc-id'), dx: 0, dy: 0 });
   const btn = el.querySelector('.svc-toggle'), lbl = btn.querySelector('.lbl');
   const more = el.querySelector('.svc-more');
   const sync = () => {
@@ -1027,12 +1079,23 @@ SERVICES.forEach((sv, i) => {
     more.inert = !open; // closed rows stay out of the tab order
   };
   sync();
-  btn.addEventListener('click', () => {
+  const toggle = () => {
     el.classList.toggle('open'); sync();
     audioInit();
     if (el.classList.contains('open')) pluck(noteFreq(7 + i * 2), 0, 1.1, 0.18, 1.2);
     else tick(noteFreq(5 + i * 2), 0, 0.05, 'triangle', 0.16);
-  });
+    // the same pulse a work thumbnail sends, fired from this card's tile
+    const n = capNode[2 * i];
+    if (n) {
+      zap(panOf(n.x));
+      if (!reduce) { shock.x = n.x; shock.y = n.y; shock.age = 0; shock.id++; }
+      if (rd) { const [u, v] = worldToUv(n.x, n.y); rd.splat(u, v, 10); }
+      flash = reduce ? 0.3 : 0.8;
+    }
+  };
+  btn.addEventListener('click', e => { e.stopPropagation(); toggle(); });
+  // the whole card is a toggle too (but not the see-work chip or text selection drags)
+  el.addEventListener('click', e => { if (!e.target.closest('.see') && !getSelection().toString()) toggle(); });
   // the field takes the service colour while you're on its card
   el.addEventListener('pointerenter', () => { tint.target = sv.c; });
   el.addEventListener('pointerleave', () => { if (tint.target === sv.c) tint.target = null; });
@@ -1699,7 +1762,7 @@ canvas.addEventListener('pointerdown', e => {
   if (rd) { const [u, v] = worldToUv(mouse.tx, mouse.ty); rd.splat(u, v, 12); }
   else { shock.x = mouse.tx; shock.y = mouse.ty; }
   flash = reduce ? 0.35 : 1;
-  if (morphClick.checked && to !== WORK) morph(); // clicks in the grid shouldn't break it up
+  if (morphClick.checked && to !== WORK && to !== CAPS) morph(); // clicks in a grid shouldn't break it up
 });
 addEventListener('pointerup', () => { mouse.down = false; });
 
@@ -1726,6 +1789,14 @@ function frame(now) {
   let si = 0;
   for (let i = 0; i < secEls.length; i++) if (secEls[i].offsetTop <= scrollY + innerHeight * 0.5) si = i;
   setSection(si);
+  // inside Capabilities the field stays centred under the heading, then builds the cards
+  if (SECTIONS[si].name === 'Capabilities') {
+    const want = svcList.getBoundingClientRect().top < innerHeight * 0.6 ? CAPS : SECTIONS[si].layout;
+    if (want !== to) morphTo(want);
+  }
+  if (to === CAPS || from === CAPS) capsGeo = measureCaps();
+  const capsD = (scrollY - capsScrollY) * (dpr / scale) * capsAmt;
+  capsScrollY = scrollY;
   morphT = Math.min(1, morphT + dt / 1.4);
   const m = ease(morphT);
   shock.age += dt;
@@ -1750,8 +1821,9 @@ function frame(now) {
   const stiff = P_.stiff, damp = 2 * Math.sqrt(stiff) * 0.55;
   for (const n of nodes) {
     if (scrollD && inGrid(n)) n.y -= scrollD;
-    // case-study shells show in Work whatever the ball count
-    const want = n.vis || (n.tile >= 0 && (to === WORK || from === WORK));
+    if (capsD && (n.cap >= 0 || n.layer === 0)) n.y -= capsD; // cards scroll with the page, no lag
+    // case-study / card shells show in their layouts whatever the ball count
+    const want = n.vis || (n.tile >= 0 && (to === WORK || from === WORK)) || (n.cap >= 0 && (to === CAPS || from === CAPS));
     n.s += ((want ? 1 : 0) - n.s) * (1 - Math.exp(-dt * 6));
     const a = layouts[from](n), b = layouts[to](n);
     let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
@@ -1884,6 +1956,19 @@ function frame(now) {
     if (live !== T.live) { T.live = live; T.el.classList.toggle('live', live); T.el.tabIndex = live ? 0 : -1; }
   }
 
+  capsAmt = (from === CAPS ? 1 - m : 0) + (to === CAPS ? m : 0);
+  const ca = Math.max(0, (capsAmt - 0.45) / 0.55);
+  svcCards.forEach((C, i) => {
+    const n = capNode[2 * i], r = capsGeo && capsGeo.rects[2 * i];
+    if (n && r && capsAmt > 0.01) {
+      const u = dpr / scale;
+      C.dx = (n.x - r.cx) / u * capsAmt; C.dy = (n.y - r.cy) / u * capsAmt;
+    } else { C.dx = 0; C.dy = 0; }
+    C.el.style.transform = `translate3d(${C.dx.toFixed(1)}px, ${C.dy.toFixed(1)}px, 0)`;
+    C.el.style.opacity = (ca * ca).toFixed(3);
+    C.el.style.pointerEvents = ca > 0.5 ? "auto" : "none";
+  });
+
   // labels: the blob swells and clears its centre, then the text fades in on top of it
   for (const n of nodes) n.labT = 0;
   const fs = flash > 0.02 ? flash * 3 : 0;
@@ -1934,7 +2019,7 @@ function frame(now) {
     const c = Math.cos(n.ang || 0), s = Math.sin(n.ang || 0);
     const ox = n.rox * c - n.roy * s, oy = n.rox * s + n.roy * c;
     const lab = n.lab || 0;
-    const isTile = n.tile >= 0 && workAmt > 0.3;
+    const isTile = (n.tile >= 0 && workAmt > 0.3) || (n.cap >= 0 && capsAmt > 0.3);
     const flag = n.layer === 0 ? n.flag * (1 - lab) : (n.layer === 1 && lab > 0.5) || isTile ? 0 : n.flag;
     const rs = n.rs ?? 1;
     arrA.set([n.x, n.y, n.r * e * rs * (1 + 0.22 * lab) * (1 + 0.02 * (n.hov || 0)), flag], count * 4);
@@ -1967,8 +2052,9 @@ function frame(now) {
   gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
   gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
   // the grid needs crisp gutters, so the goo thins while it's up
-  gl.uniform1f(U.uK, Math.max(P_.k * (1 - 0.85 * workAmt), 0.5));
-  gl.uniform1f(U.uWork, workAmt);
+  const gridAmt = Math.max(workAmt, capsAmt);
+  gl.uniform1f(U.uK, Math.max(P_.k * (1 - 0.85 * gridAmt), 0.5));
+  gl.uniform1f(U.uWork, gridAmt);
   gl.uniform1f(U.uGlow, P_.glow);
   gl.uniform1f(U.uContours, P_.contours);
   gl.uniform1f(U.uFlash, flash > 0.01 ? flash : 0);
