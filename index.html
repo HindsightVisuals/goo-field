@@ -618,11 +618,15 @@ const PROJECTS = [
 const WORK = 5, CYCLE = 5; // space/Morph cycle the first five layouts
 let gridCache = null;
 function grid() {
-  const narrow = W / scale < 860;
-  if (gridCache && gridCache.narrow === narrow) return gridCache;
+  // the grid fills the viewport: PAD css px from every edge and between tiles
+  const key = W + 'x' + H;
+  if (gridCache && gridCache.key === key) return gridCache;
+  const narrow = W / dpr < 700;
+  const u = dpr / scale; // world units per css px
+  const pad = (narrow ? 16 : 24) * u, gap = (narrow ? 16 : 24) * u;
   const cols = narrow ? 2 : 4, rows = PROJECTS.length / cols;
-  const tw = narrow ? 200 : 182, th = narrow ? 138 : 128, gap = narrow ? 40 : 46;
-  const hw = (cols * tw + (cols - 1) * gap) / 2, hh = (rows * th + (rows - 1) * gap) / 2;
+  const hw = W / scale / 2 - pad, hh = H / scale / 2 - pad;
+  const tw = (2 * hw - (cols - 1) * gap) / cols, th = (2 * hh - (rows - 1) * gap) / rows;
   const centers = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
     centers.push([-hw + tw / 2 + c * (tw + gap), -hh + th / 2 + r * (th + gap)]);
@@ -642,7 +646,7 @@ function grid() {
     }
     if (best) best.tile = i;
   });
-  return (gridCache = { narrow, cols, rows, tw, th, gap, hw, hh, centers, gut, glen });
+  return (gridCache = { key, narrow, u, cols, rows, tw, th, gap, hw, hh, centers, gut, glen });
 }
 const coreNodes = nodes.filter(n => n.layer === 0);
 coreNodes.forEach((n, i) => { n.ci = i; });
@@ -659,11 +663,13 @@ layouts.push(n => {
   const G = grid();
   if (n.layer === 1 && n.tile >= 0) {
     const c = G.centers[n.tile];
-    return { x: c[0], y: c[1], a: 0, rs: G.th / 2 / (n.r * 0.92), cr: 0.12, ex: (G.tw - G.th) / 2, ey: 0 };
+    const m = Math.min(G.tw, G.th) / 2;
+    return { x: c[0], y: c[1], a: 0, rs: m / (n.r * 0.92), cr: Math.min(0.9, 12 * G.u / m),
+      ex: G.tw / 2 - m, ey: G.th / 2 - m };
   }
   if (n.layer === 0) {
     const [x, y] = gutterPoint(G, n.ci * 0.6180339 + 0.05);
-    return { x, y, a: 0, rs: Math.min(1, 8 / n.r) };
+    return { x, y, a: 0, rs: Math.min(1, 4 * G.u / n.r) };
   }
   // the rest ring the grid on a rounded rectangle, a little ragged
   const out = n.layer === 3 ? 110 : 70;
@@ -809,7 +815,7 @@ uniform vec4 uA[N]; uniform vec4 uB[N]; uniform int uCount;
 uniform vec3 uMouse; uniform vec4 uShock; uniform float uK; uniform float uGlow;
 uniform float uContours; uniform float uSpacing; uniform float uFlash; uniform float uMirror;
 uniform vec3 uTint; uniform float uTintAmt; uniform float uInvert;
-uniform sampler2D uRD; uniform float uRDAmt;
+uniform sampler2D uRD; uniform float uRDAmt; uniform float uWork;
 #define GN ${GN}
 uniform vec4 uGa[GN]; uniform vec4 uGb[GN]; uniform int uGCount;
 uniform vec4 uOrb; uniform float uDash;
@@ -873,7 +879,7 @@ vec3 scene(vec2 p){
     float d = cr > 0.99 ? sdSeg(p, A.xy, B.xy, A.z) : sdBox(lq, vec2(rr * (1. - cr)) + abs(B.xy - A.xy)) - rr * cr;
     if (lay < 0.5) {
       core = smin(core, d, k);
-      shell = smin(shell, d - A.z * 0.3 - 16., k * 2.2);
+      shell = smin(shell, d - (A.z * 0.3 + 16.) * (1. - uWork), k * 2.2);
       if (B.z > 0.) { holes = min(holes, shp(lq, B.z, cr)); if (A.w > 0.) dots = min(dots, shp(lq, B.z * A.w, cr)); }
       else if (B.z < 0.) holes = min(holes, shp(lq, -B.z, cr));
     } else if (lay < 1.5) {
@@ -1066,7 +1072,7 @@ const loc = gl.getAttribLocation(prog, 'p');
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 const U = {};
-for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt'])
+for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork'])
   U[n] = gl.getUniformLocation(prog, n);
 const arrA = new Float32Array(N * 4), arrB = new Float32Array(N * 4);
 const arrGa = new Float32Array(GN * 4), arrGb = new Float32Array(GN * 4);
@@ -1449,7 +1455,9 @@ function frame(now) {
     n.cr = (a.cr ?? cr0) + ((b.cr ?? cr0) - (a.cr ?? cr0)) * m;
     n.ex = (a.ex ?? 0) + ((b.ex ?? 0) - (a.ex ?? 0)) * m;
     n.ey = (a.ey ?? 0) + ((b.ey ?? 0) - (a.ey ?? 0)) * m;
-    if (!reduce) { tx += Math.sin(time * 0.7 + n.ph) * 4; ty += Math.cos(time * 0.55 + n.ph * 1.3) * 4; }
+    // idle drift; tiles hold still in the grid so the 24px margins stay true
+    const dr = (n.tile >= 0 ? 1 - workAmt : 1) * 4;
+    if (!reduce) { tx += Math.sin(time * 0.7 + n.ph) * dr; ty += Math.cos(time * 0.55 + n.ph * 1.3) * dr; }
     let fx = (tx - n.x) * stiff, fy = (ty - n.y) * stiff;
 
     if (mouse.inside && P_.mode !== 'blob') {
@@ -1551,11 +1559,11 @@ function frame(now) {
     const n = nodes.find(k => k.tile === T.i);
     if (!n) continue;
     n.hov = (n.hov || 0) + ((T.hover ? 1 : 0) - (n.hov || 0)) * (1 - Math.exp(-dt * 10));
-    const k = (1 + 0.05 * n.hov) * scale / dpr, inset = 5;
+    const k = (1 + 0.02 * n.hov) * scale / dpr, inset = 3 * G.u;
     const w = (G.tw - inset * 2) * k, h = (G.th - inset * 2) * k;
     const sx = (n.x * scale + W / 2) / dpr, sy = (n.y * scale + H / 2) / dpr;
     T.el.style.width = w.toFixed(1) + 'px'; T.el.style.height = h.toFixed(1) + 'px';
-    T.el.style.borderRadius = (G.th / 2 * 0.12 * 0.8 * k).toFixed(1) + 'px';
+    T.el.style.borderRadius = '9px';
     T.el.style.transform = `translate3d(${(sx - w / 2).toFixed(1)}px, ${(sy - h / 2).toFixed(1)}px, 0)`;
     T.el.style.opacity = (ta * ta).toFixed(3);
     const live = ta > 0.6;
@@ -1615,7 +1623,7 @@ function frame(now) {
     const isTile = n.tile >= 0 && workAmt > 0.3;
     const flag = n.layer === 0 ? n.flag * (1 - lab) : (n.layer === 1 && lab > 0.5) || isTile ? 0 : n.flag;
     const rs = n.rs ?? 1;
-    arrA.set([n.x, n.y, n.r * e * rs * (1 + 0.22 * lab) * (1 + 0.05 * (n.hov || 0)), flag], count * 4);
+    arrA.set([n.x, n.y, n.r * e * rs * (1 + 0.22 * lab) * (1 + 0.02 * (n.hov || 0)), flag], count * 4);
     const ext = (n.ex || 0) > 0.5 || (n.ey || 0) > 0.5;
     const cr = ext ? Math.min(n.cr ?? 1, 0.98) : n.cr ?? CORNER[n.sq];
     const bx = n.rox || n.roy ? n.x + ox : n.x + (n.ex || 0);
@@ -1645,7 +1653,8 @@ function frame(now) {
   gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
   gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
   // the grid needs crisp gutters, so the goo thins while it's up
-  gl.uniform1f(U.uK, Math.max(P_.k * (1 - 0.6 * workAmt), 0.5));
+  gl.uniform1f(U.uK, Math.max(P_.k * (1 - 0.85 * workAmt), 0.5));
+  gl.uniform1f(U.uWork, workAmt);
   gl.uniform1f(U.uGlow, P_.glow);
   gl.uniform1f(U.uContours, P_.contours);
   gl.uniform1f(U.uFlash, flash > 0.01 ? flash : 0);
