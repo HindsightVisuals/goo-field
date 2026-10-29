@@ -1,9 +1,12 @@
 <title>Goo Field</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
+<!-- Loos comes from the commms Typekit kit; it's domain-locked to hindsightvisuals.github.io, so local runs fall back -->
+<link rel="preconnect" href="https://use.typekit.net" crossorigin>
+<link rel="stylesheet" href="https://use.typekit.net/jhm5bdq.css">
 <style>
-/* Layout: full-bleed WebGL field, a quiet HUD top-left, a compact instrument panel bottom-left. Single dark look by choice. */
+/* Layout: full-bleed WebGL field, sticky nav on top, the instrument HUD along the bottom. Single dark look by choice. */
 :root {
   --bg: #121313;
   --panel: rgba(24, 25, 26, 0.82);
@@ -11,7 +14,16 @@
   --fg: #e8ecec;
   --muted: #8a9092;
   --accent: #f4f6f5;
-  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --nav-idle: #989898;
+  --knob: #3a3a3a;
+  --scrim: #202020;
+  --violet: #9655f9;
+  /* Figma: Galix Mono (local-only) → Space Mono, as on commms */
+  --mono: "Space Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --display: "loos-wide", "loos-extrawide", system-ui, sans-serif;
+  --wordmark: "loos-extended", system-ui, sans-serif;
+  --ink: #fff;     /* nav + HUD strokes and text */
+  --hole: #121313; /* the emblem cells' centres */
   color-scheme: dark;
 }
 /* inverted: the UI flips with the field so it stays readable */
@@ -24,7 +36,13 @@
   --accent: #121313;
   color-scheme: light;
 }
+/* the contact page is always dark, so the nav keeps its dark ink over it */
+:root.inv body:not(.contact-open) { --ink: #121313; --hole: #edecec; --knob: #cfcfcf; --nav-idle: #6f6f6f; }
+:root.inv .joy img, :root.inv .switch .icon { filter: invert(1); }
+:root.inv .scope { mix-blend-mode: normal; }
+:root.inv .vslider .tick { background: rgba(18, 19, 19, 0.1); }
 body {
+  margin: 0;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
@@ -41,37 +59,112 @@ body {
 }
 .label.on-core { color: var(--bg); }
 .label.on-shell { color: var(--fg); }
-.sec { display: grid; gap: 2px; margin-top: 12px; }
-.sec span { font-size: 11px; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
-.sec strong { font-size: 20px; font-weight: 500; letter-spacing: 0.01em; }
-.sec.in { animation: sec-in 0.6s ease-out; }
-@keyframes sec-in { from { opacity: 0.2; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.secnav {
-  position: fixed; top: 50%; transform: translateY(-50%);
-  right: max(16px, env(safe-area-inset-right, 0px));
-  display: grid; gap: 10px; justify-items: end;
-}
-.secnav button {
-  font: inherit; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--muted); background: none; border: 0; padding: 2px 0; cursor: pointer;
-  display: flex; align-items: center; gap: 8px;
-}
-.secnav button::after { content: ""; width: 10px; height: 1px; background: currentColor; transition: width 0.3s; }
-.secnav button[aria-current="true"] { color: var(--fg); }
-.secnav button[aria-current="true"]::after { width: 28px; }
-.secnav button:hover, .secnav button:focus-visible { color: var(--c, var(--fg)); }
-@media (prefers-reduced-motion: reduce) { .sec.in { animation: none; } }
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: none; }
-.hud {
-  position: fixed;
-  top: calc(16px + env(safe-area-inset-top, 0px));
-  left: max(16px, env(safe-area-inset-left, 0px));
+
+/* --- sticky nav (Figma 184:1603) ------------------------------------------ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 30; height: 96px; box-sizing: border-box;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) 16px max(24px, env(safe-area-inset-left, 0px));
+  display: flex; justify-content: space-between; align-items: flex-start;
   pointer-events: none;
-  display: grid;
-  gap: 4px;
 }
-.hud h1 { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; }
-.hud p { margin: 0; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+.nav > * { pointer-events: auto; }
+body.contact-open .nav { background: #121313; border-bottom: 2px solid #6b6b6b; }
+.logo { display: block; width: 203px; color: var(--ink); line-height: 0; }
+.logo svg { width: 100%; height: auto; overflow: visible; }
+.logo .line { fill: none; stroke: currentColor; stroke-width: 1.14176; stroke-miterlimit: 10; }
+.logo .fill { fill: currentColor; }
+.logo:focus-visible { outline: 1px solid var(--accent); outline-offset: 6px; }
+.nav-links { display: flex; gap: 32px; align-items: flex-start; margin: 0 32px 0 auto; }
+.nav-links button {
+  font: 700 24px/normal var(--display); text-transform: uppercase; white-space: nowrap;
+  color: var(--nav-idle); background: none; border: 0; padding: 0; cursor: pointer;
+  transition: color 0.25s ease, text-shadow 0.35s ease;
+}
+.nav-links button[aria-current="true"] { color: var(--ink); }
+/* "use the colors to illuminate these on hover" */
+.nav-links button:hover, .nav-links button:focus-visible {
+  color: var(--c); text-shadow: 0 0 14px var(--c), 0 0 32px var(--c);
+}
+.nav-links button:focus-visible { outline: none; }
+
+/* --- contact emblem (ported from commms src/styles/emblem.css) ------------- */
+.emblem {
+  position: relative; width: 64px; height: 64px; padding: 0; border: 0;
+  background: none; cursor: pointer; flex: 0 0 auto; color: var(--ink);
+}
+.emblem-cell {
+  --s: 0.5;
+  position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border-radius: 2px; background: currentColor;
+  transform: rotate(45deg) scale(var(--s));
+}
+.emblem-cell::after { content: ''; position: absolute; inset: 4px; border-radius: 1px; background: var(--hole); }
+.emblem:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+@media (max-width: 900px) {
+  .nav { height: 72px; }
+  .logo { width: 120px; }
+  .nav-links { gap: 16px; margin-right: 16px; }
+  .nav-links button { font-size: 14px; }
+  .emblem { transform: scale(0.75); transform-origin: top right; }
+}
+@media (max-width: 560px) { .nav-links { display: none; } }
+
+/* --- beat 3: the tile field (wipe) ----------------------------------------- */
+.wipe-tiles { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; }
+.wipe-tile { position: absolute; background: #000; transform: translate(-50%, -50%) rotate(45deg) scale(0); }
+.wipe-tile::after { content: ''; position: absolute; inset: 44%; border-radius: 3px; background: #fdfdfd; }
+
+/* --- bottom HUD (Figma 184:1708) -------------------------------------------- */
+.hud {
+  position: fixed; z-index: 10;
+  left: max(15px, env(safe-area-inset-left, 0px)); right: max(15px, env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+.hud > * { pointer-events: auto; }
+.hud-controls { display: flex; gap: 16px; align-items: flex-end; }
+.hud-switches { display: flex; flex-direction: column; gap: 16px; }
+.knob { width: 18px; height: 18px; border: 1px solid var(--ink); border-radius: 2px; background: var(--knob); }
+.vslider {
+  position: relative; height: 365px; padding: 10px; box-sizing: border-box;
+  border: 1px solid var(--ink); border-radius: 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  cursor: ns-resize; touch-action: none;
+}
+.vslider .tick { width: 6px; height: 37px; box-sizing: border-box; background: rgba(255, 255, 255, 0.1); border-block: 1px solid var(--ink); }
+.vslider .knob { position: absolute; left: 4px; top: 4px; }
+.switch {
+  position: relative; width: 60px; height: 28px; box-sizing: border-box; padding: 4px;
+  border: 1px solid var(--ink); border-radius: 4px; background: none; cursor: pointer;
+  display: flex; align-items: center;
+}
+.switch .knob { transition: transform 0.2s ease, background-color 0.2s ease; }
+.switch[aria-checked="true"] .knob { transform: translateX(32px); background: var(--ink); }
+/* the speaker sits in whichever half the knob isn't */
+.switch .icon { position: absolute; left: 32px; top: 6px; width: 20px; height: 14px; transition: left 0.2s ease; }
+.switch[aria-checked="true"] .icon { left: 6px; }
+.joy {
+  position: relative; width: 100px; height: 100px; box-sizing: border-box;
+  border: 1px solid var(--ink); border-radius: 6px;
+  display: grid; place-items: center; cursor: grab; touch-action: none;
+}
+.joy img { position: absolute; left: -1px; top: -1px; width: 100px; height: 100px; pointer-events: none; }
+.joy.dragging { cursor: grabbing; }
+.switch:focus-visible, .joy:focus-visible, .vslider:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+.mission { margin: 0; font-size: 16px; color: var(--ink); white-space: nowrap; text-align: center; flex: 1 1 auto; }
+@media (max-width: 1100px) { .mission { display: none; } }
+@media (max-width: 700px) {
+  .vslider { height: 180px; }
+  .vslider .tick { height: 14px; }
+}
+body.in-work .hud, body.contact-open .hud, body.at-foot .hud { opacity: 0; pointer-events: none; }
+body.in-work .hud > *, body.contact-open .hud > *, body.at-foot .hud > * { pointer-events: none; }
+/* the footer in the main flow: opaque and above the fixed field, dark even when inverted */
+.main-foot { position: relative; z-index: 1; background: #121313; color-scheme: dark; border-top: 2px solid #6b6b6b; }
+
 .panel {
   position: fixed;
   left: max(16px, env(safe-area-inset-left, 0px));
@@ -109,26 +202,15 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .seg button[aria-pressed="true"]:hover { background: var(--fg); }
 button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 .check { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+/* signal readout (Figma "image 10": 270 × 81.5, lighten blend) */
 .scope {
-  position: fixed;
-  right: max(16px, env(safe-area-inset-right, 0px));
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  width: min(320px, calc(100vw - 32px));
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px;
-  display: grid;
-  gap: 6px;
-  font-size: 11px;
-  pointer-events: none;
+  position: relative; width: 270px; height: 81.5px; box-sizing: border-box; flex: 0 0 auto;
+  border: 1px solid var(--ink); border-radius: 4px; overflow: hidden;
+  mix-blend-mode: lighten; pointer-events: none !important;
 }
-.scope header { display: flex; justify-content: space-between; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
-.scope header output { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
-.scope canvas { position: static; width: 100%; height: 72px; cursor: default; }
-@media (max-width: 660px) {
-  .scope { bottom: auto; top: calc(16px + env(safe-area-inset-top, 0px)); width: min(170px, calc(100vw - 32px)); }
-  .scope canvas { height: 44px; }
-}
+/* pinned to the box: left in flow, the canvas's default 150px height stretched it, and drawScope sizes the buffer from that */
+.scope canvas { position: absolute; inset: 4px 6px; width: calc(100% - 12px); height: calc(100% - 8px); cursor: default; }
+@media (max-width: 700px) { .scope { width: 140px; height: 56px; } }
 .check input { accent-color: var(--accent); margin: 0; }
 /* work thumbnails: DOM tiles riding on the shader's tile shapes */
 .thumbs { position: fixed; inset: 0; pointer-events: none; }
@@ -161,7 +243,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 .thumb.text:hover, .thumb.text:focus-visible { background: rgba(232, 236, 236, 0.06); }
 /* tag filters: AND together; a tag that would leave nothing greys out */
 .filters {
-  position: fixed; top: calc(24px + env(safe-area-inset-top, 0px)); left: 64px; right: 64px;
+  position: fixed; top: calc(104px + env(safe-area-inset-top, 0px)); left: 64px; right: 64px;
   display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
   opacity: 0; pointer-events: none; transition: opacity 0.35s ease;
 }
@@ -178,11 +260,85 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 .filters button[aria-pressed="true"] .n { color: inherit; opacity: 0.6; }
 .filters button:disabled { opacity: 0.28; cursor: not-allowed; }
 .filters .clear { border-style: dashed; }
-.hud { transition: opacity 0.35s ease; }
-body.in-work .hud { opacity: 0; }
 @media (max-width: 700px) { .filters { left: 16px; right: 16px; justify-content: flex-start; } }
-@media (prefers-reduced-motion: reduce) { .filters, .hud { transition: none; } }
+@media (max-width: 900px) { .filters { top: calc(80px + env(safe-area-inset-top, 0px)); } }
+@media (prefers-reduced-motion: reduce) { .filters, .hud, .switch .knob, .switch .icon, .nav-links button { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .thumb img { transition: none; } }
+/* the old instrument panel is a debug tool now: D or ?debug */
+body:not(.debug) .panel { display: none; }
+.panel { z-index: 35; }
+body.contact-open .labels, body.contact-open .thumbs, body.contact-open .filters { visibility: hidden; }
+
+/* --- contact page (Figma 162:489) — the goo canvas moves into .contact-goo while it's open --- */
+.contact {
+  position: fixed; inset: 0; z-index: 20; overflow-y: auto; overscroll-behavior: contain;
+  background: #121313; color-scheme: dark; padding-top: 96px; box-sizing: border-box;
+}
+.contact[hidden] { display: none; }
+.contact-stage { display: flex; border: 1px solid #e0e0e0; border-top: 0; min-height: calc(100vh - 96px); min-height: calc(100svh - 96px); }
+.contact-goo { position: relative; flex: 643 1 0; min-width: 0; padding: 10px; }
+.contact-goo canvas { position: absolute; inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); }
+.cmodal {
+  flex: 785 1 0; min-width: 0; box-sizing: border-box;
+  background: var(--scrim); border: 2px solid #fff; padding: 12px;
+  display: flex; flex-direction: column; gap: 15px;
+}
+.cmodal .marks { display: flex; justify-content: space-between; line-height: 0; }
+.cmodal .marks img { width: 11.772px; height: 11.76px; }
+.cmodal form { display: flex; flex-direction: column; gap: 48px; align-items: flex-start; }
+.chead { display: flex; justify-content: space-between; gap: 24px; width: 100%; padding-top: 4px; }
+.chead h2 { margin: 0; font: 700 32px/0.94 var(--wordmark); color: #fff; }
+.chead p { margin: 0; width: 285px; max-width: 45%; font-size: 14px; color: #fff; text-wrap: balance; }
+.cfields { display: flex; flex-direction: column; gap: 24px; width: 100%; }
+.crow { display: flex; gap: 24px; }
+.crow > * { flex: 1 1 0; min-width: 0; }
+.cfield {
+  box-sizing: border-box; height: 57px; width: 100%; padding: 0 12px;
+  background: #000; border: 2px solid #6b6b6b; border-radius: 4px;
+  font: 400 14px var(--mono); letter-spacing: 1.96px; color: #efefef;
+}
+.cfield::placeholder { color: #bdbdbd; text-transform: uppercase; }
+textarea.cfield { height: 120px; padding: 18px 12px; resize: vertical; }
+select.cfield { appearance: none; text-transform: uppercase; color: #bdbdbd; background: #000 url(ui/chevron.svg) no-repeat right 12px center / 24px; }
+select.cfield.set { color: #efefef; }
+.cfield:focus-visible { outline: none; border-color: #fff; }
+.cservices { display: flex; flex-direction: column; gap: 24px; }
+.cservices h3 { margin: 0; font: 700 20px/0.94 var(--wordmark); color: #efefef; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips button, .csend {
+  font: 400 14px var(--mono); letter-spacing: 1.96px; text-transform: uppercase; cursor: pointer;
+}
+.chips button { color: #efefef; background: #000; border: 2px solid #2f2f2f; border-radius: 4px; padding: 12px 14px; }
+.chips button[aria-pressed="true"] { border-color: #fff; background: #fff; color: #0f0f0f; }
+.chips button:focus-visible, .csend:focus-visible { outline: 1px solid #fff; outline-offset: 2px; }
+.csend {
+  font-size: 18px; letter-spacing: 2.52px; color: #0f0f0f; background: var(--violet);
+  border: 0; border-inline: 2px solid #fff; border-radius: 4px; padding: 13px 34px;
+}
+.ccomm { padding: 33px 36px 76px; display: flex; flex-direction: column; gap: 76px; }
+.ccomm h2 { margin: 0 0 32px; font: 700 clamp(40px, 6.7vw, 96px)/normal var(--wordmark); color: #fff; }
+.ccomm .cline { display: flex; justify-content: space-between; align-items: center; gap: 32px; }
+.ccomm .cols { display: flex; gap: 66px; flex-wrap: wrap; }
+.ccol { display: flex; flex-direction: column; gap: 14px; }
+.tags { display: flex; gap: 11px; }
+.tags span { border: 1.38px solid #2f2f2f; border-radius: 2.76px; padding: 6.9px 11px; font-size: 12px; letter-spacing: 1.68px; color: #fff; }
+.ccol a, .ccol button {
+  font: 700 24px/normal var(--wordmark); text-transform: uppercase; color: #fff; text-decoration: none;
+  background: none; border: 0; padding: 0; text-align: left; cursor: pointer;
+}
+.ccol a:hover, .ccol button:hover, .ccol a:focus-visible, .ccol button:focus-visible { color: var(--violet); outline: none; }
+.ccomm .avail { margin: 0; font-size: 14px; color: #fff; border: 1.38px solid #6b6b6b; }
+.cfoot { background: var(--scrim); padding: 33px 36px; display: flex; flex-direction: column; gap: 41px; }
+.cfoot .bottom { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 14px; letter-spacing: 1.96px; color: var(--violet); }
+.cfoot .bottom button { font: inherit; letter-spacing: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+@media (max-width: 900px) {
+  .contact { padding-top: 72px; }
+  .contact-stage { flex-direction: column; }
+  .contact-goo { min-height: 60vh; }
+  .crow, .chead { flex-direction: column; }
+  .chead p { width: auto; max-width: none; }
+  .ccomm .cline { flex-direction: column; align-items: flex-start; }
+}
 </style>
 
 <canvas id="c"></canvas>
@@ -194,18 +350,126 @@ body.in-work .hud { opacity: 0; }
 
 <main class="sections" id="sections"></main>
 
-<div class="hud">
-  <h1>Goo Field</h1>
-  <p>scroll for sections · move to pull · click to pulse · space to morph</p>
-  <p>sound starts on your first click</p>
-  <div class="sec" id="sec"><span id="sec-name"></span><strong id="sec-title"></strong></div>
+<header class="nav">
+  <a class="logo" id="logo" href="#" aria-label="Wes, back to top">
+    <svg viewBox="0 0 203 62.3118" aria-hidden="true">
+      <defs>
+        <path id="logo-d" d="M178.075 24.685C161.554 23.0865 158.426 22.7326 158.426 18.9248V18.3938C158.426 15.3796 163.552 14.4034 171.813 14.4034H173.948C181.706 14.4034 187.261 15.3796 187.261 21.2311C187.261 21.8648 187.775 22.3843 188.414 22.3843H200.283C200.916 22.3843 201.436 21.8705 201.436 21.2311C201.436 6.86773 190.686 0.576611 173.954 0.576611H171.818C160.92 0.576611 152.597 3.23121 148.018 8.35774C146.86 9.65364 144.73 8.88295 144.73 7.14747V3.17413C144.73 2.22646 143.965 1.46148 143.017 1.46148H78.8218C77.9997 1.46148 77.2918 2.04949 77.1377 2.85443L69.0654 45.5621C68.9455 46.2072 68.3804 46.6753 67.7239 46.6753C67.0616 46.6753 66.4907 46.1958 66.3766 45.545L58.9151 2.87727C58.7724 2.0552 58.0588 1.46148 57.2253 1.46148H35.2578C34.4243 1.46148 33.7107 2.0609 33.568 2.88297L26.2436 45.5393C26.1294 46.1958 25.5642 46.6753 24.8963 46.6753C24.2398 46.6753 23.6803 46.2129 23.5547 45.5678L15.3625 2.84872C15.2084 2.04378 14.5005 1.46148 13.6784 1.46148H2.28363C1.21037 1.46148 0.39972 2.4434 0.599528 3.49953L11.3378 59.4688C11.492 60.2738 12.1999 60.8561 13.0219 60.8561H35.155C35.9885 60.8561 36.7021 60.2566 36.8448 59.4346L44.175 16.7383C44.2834 16.1103 44.8315 15.6479 45.4709 15.6479C46.1103 15.6479 46.6526 16.1046 46.7611 16.7326L54.2967 59.446C54.4394 60.2623 55.153 60.8618 55.9808 60.8618H78.1196C78.9417 60.8618 79.6496 60.2795 79.8037 59.4745L88.504 14.1179C88.7609 12.7649 90.7532 12.9533 90.7532 14.3292V59.1491C90.7532 60.0968 91.5182 60.8618 92.4659 60.8618H145.084V58.7952C145.084 56.0549 148.224 54.525 150.399 56.1977C155.217 59.9141 162.553 61.7466 172.389 61.7466H174.524C192.753 61.7466 202.435 54.7419 202.435 43.1302V42.2453C202.435 31.5184 195.385 26.3748 178.081 24.6907L178.075 24.685ZM188.043 43.5697C188.043 46.938 182.916 47.9142 174.513 47.9142H172.378C162.907 47.9142 157.638 46.938 157.638 40.3785C157.638 39.8876 157.238 39.4936 156.753 39.4936H144.359C143.868 39.4936 143.474 39.8933 143.474 40.3785C143.474 40.9323 143.491 41.4689 143.52 41.9998C143.645 44.3005 141.813 46.2301 139.507 46.2301H107.349C106.401 46.2301 105.636 45.4651 105.636 44.5174V39.0769C105.636 38.1292 106.401 37.3643 107.349 37.3643H138.884C139.832 37.3643 140.597 36.5993 140.597 35.6516V25.5127C140.597 24.5651 139.832 23.8001 138.884 23.8001H107.349C106.401 23.8001 105.636 23.0351 105.636 22.0875V17.7145C105.636 16.7668 106.401 16.0018 107.349 16.0018H140.865C142.624 16.0018 144.045 17.4291 144.045 19.1817V19.2787V19.8096C144.045 31.2444 152.374 36.2111 168.467 37.4499C183.493 38.6031 188.049 39.134 188.049 42.6792V43.564L188.043 43.5697Z"/>
+        <!-- the fill is a pool that floods in from wherever the pointer crossed the edge; turbulence keeps its rim liquid -->
+        <filter id="logo-liquid" x="-50%" y="-50%" width="200%" height="200%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="4" result="n"/>
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="16" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <mask id="logo-mask" maskUnits="userSpaceOnUse" x="-20" y="-20" width="243" height="102">
+          <circle id="logo-pool" cx="0" cy="0" r="0" fill="#fff" filter="url(#logo-liquid)"/>
+        </mask>
+      </defs>
+      <use class="fill" href="#logo-d" mask="url(#logo-mask)"/>
+      <use class="line" href="#logo-d"/>
+    </svg>
+  </a>
+  <nav class="nav-links" id="navlinks" aria-label="Sections"></nav>
+</header>
+
+<div class="hud" id="hud">
+  <div class="hud-controls">
+    <div class="vslider" id="vslider" role="slider" tabindex="0" aria-label="Dots" aria-orientation="vertical">
+      <span class="tick"></span><span class="tick"></span><span class="tick"></span><span class="tick"></span>
+      <span class="tick"></span><span class="tick"></span><span class="tick"></span>
+      <span class="knob"></span>
+    </div>
+    <div class="hud-switches">
+      <button class="switch" id="sw-invert" role="switch" aria-checked="false" aria-label="Invert" title="Invert (I)"><span class="knob"></span></button>
+      <button class="switch" id="sw-orbit" role="switch" aria-checked="false" aria-label="Orbit" title="Orbit: weightless, wheeling round the centre"><span class="knob"></span></button>
+      <button class="switch" id="sw-mute" role="switch" aria-checked="false" aria-label="Mute" title="Mute">
+        <span class="knob"></span>
+        <!-- speaker glyph from Figma 184:1719 (Frame 112), translated to its own box -->
+        <svg class="icon" viewBox="33 7.35 18.6 13.3" aria-hidden="true"><path fill="#D2D2D2" d="M48 15.4L46.1 17.3C45.9167 17.4833 45.6833 17.575 45.4 17.575C45.1167 17.575 44.8833 17.4833 44.7 17.3C44.5167 17.1167 44.425 16.8833 44.425 16.6C44.425 16.3167 44.5167 16.0833 44.7 15.9L46.6 14L44.7 12.1C44.5167 11.9167 44.425 11.6833 44.425 11.4C44.425 11.1167 44.5167 10.8833 44.7 10.7C44.8833 10.5167 45.1167 10.425 45.4 10.425C45.6833 10.425 45.9167 10.5167 46.1 10.7L48 12.6L49.9 10.7C50.0833 10.5167 50.3167 10.425 50.6 10.425C50.8833 10.425 51.1167 10.5167 51.3 10.7C51.4833 10.8833 51.575 11.1167 51.575 11.4C51.575 11.6833 51.4833 11.9167 51.3 12.1L49.4 14L51.3 15.9C51.4833 16.0833 51.575 16.3167 51.575 16.6C51.575 16.8833 51.4833 17.1167 51.3 17.3C51.1167 17.4833 50.8833 17.575 50.6 17.575C50.3167 17.575 50.0833 17.4833 49.9 17.3L48 15.4ZM37 17H34C33.7167 17 33.4792 16.9042 33.2875 16.7125C33.0958 16.5208 33 16.2833 33 16V12C33 11.7167 33.0958 11.4792 33.2875 11.2875C33.4792 11.0958 33.7167 11 34 11H37L40.3 7.7C40.6167 7.38333 40.9792 7.3125 41.3875 7.4875C41.7958 7.6625 42 7.975 42 8.425V19.575C42 20.025 41.7958 20.3375 41.3875 20.5125C40.9792 20.6875 40.6167 20.6167 40.3 20.3L37 17ZM40 10.85L37.85 13H35V15H37.85L40 17.15V10.85Z"/></svg>
+      </button>
+    </div>
+    <div class="joy" id="joy" tabindex="0" role="application" aria-label="Push the field. Drag, or hold the arrow keys; it drifts back when you let go." title="Drag to push the field · it drifts back when you let go">
+      <img src="ui/joystick.svg" alt="" width="100" height="100">
+      <span class="knob" id="joy-knob"></span>
+    </div>
+  </div>
+  <p class="mission">I make things come to life through animation, 3D, and interactive web.</p>
+  <div class="scope" aria-hidden="true">
+    <canvas id="scope"></canvas>
+  </div>
 </div>
 
-<nav class="secnav" id="secnav" aria-label="Sections"></nav>
-
-<div class="scope" aria-hidden="true">
-  <canvas id="scope"></canvas>
-</div>
+<section class="contact" id="contact" hidden aria-labelledby="contact-title">
+  <div class="contact-stage">
+    <div class="contact-goo" id="contact-goo"></div>
+    <div class="cmodal">
+      <div class="marks" aria-hidden="true"><img src="ui/plus.svg" alt=""><img src="ui/plus.svg" alt=""></div>
+      <form id="cform">
+        <div class="chead">
+          <h2 id="contact-title" tabindex="-1">send a signal</h2>
+          <p>Let’s start a conversation. Fill out the form and let’s schedule a call. Or simply email - but the best communication happens face to face.</p>
+        </div>
+        <div class="cfields">
+          <div class="crow">
+            <input class="cfield" name="name" placeholder="Your name*" aria-label="Your name" required autocomplete="name">
+            <input class="cfield" name="email" type="email" placeholder="Your email*" aria-label="Your email" required autocomplete="email">
+          </div>
+          <div class="crow">
+            <input class="cfield" name="phone" type="tel" placeholder="Phone (optional)" aria-label="Phone (optional)" autocomplete="tel">
+            <select class="cfield" name="budget" aria-label="Budget" required>
+              <option value="" selected disabled>Budget*</option>
+              <option>Under $5k</option><option>$5k–$15k</option><option>$15k–$40k</option><option>$40k+</option>
+            </select>
+          </div>
+          <textarea class="cfield" name="project" placeholder="Tell us about the project*" aria-label="Tell us about the project" required></textarea>
+          <div class="cservices">
+            <h3 id="services-h">what services are you interested in?</h3>
+            <div class="chips" id="chips" role="group" aria-labelledby="services-h"></div>
+          </div>
+        </div>
+        <button class="csend" type="submit">Send message</button>
+      </form>
+      <div class="marks" aria-hidden="true"><img src="ui/plus.svg" alt=""><img src="ui/plus.svg" alt=""></div>
+    </div>
+  </div>
+  <!-- shared: the main flow gets a clone of this after its last section -->
+  <div class="sitefoot" id="sitefoot">
+  <div class="ccomm">
+    <div>
+      <h2>let’s commmunicate</h2>
+      <div class="cline">
+        <div class="cols">
+          <div class="ccol">
+            <div class="tags"><span>PRIMARY</span><span>EMAIL</span></div>
+            <a href="mailto:adam.tarr.studio@gmail.com">adam.tarr.studio@gmail.com</a>
+          </div>
+          <div class="ccol">
+            <div class="tags"><span>SECONDARY</span><span>SOCIAL</span></div>
+            <!-- TODO: real profile URLs -->
+            <a href="#" rel="noopener">LinkedIn</a>
+            <a href="#" rel="noopener">Instagram</a>
+            <a href="#" rel="noopener">YouTube</a>
+          </div>
+        </div>
+        <img src="ui/footer-mark.svg" alt="" width="165" height="165">
+      </div>
+    </div>
+    <p class="avail">Available for select freelance  ·  open to senior in-house roles  ·  reply within 2 business days.</p>
+  </div>
+  <footer class="cfoot">
+    <div class="ccol">
+      <div class="tags"><span>SECONDARY</span><span>SOCIAL</span></div>
+      <button type="button" data-go="1">work</button>
+      <button type="button" data-go="3">about</button>
+      <button type="button" data-go="contact">contact</button>
+    </div>
+    <div class="bottom">
+      <span>© 2026 · A. TARR</span>
+      <span>END OF FILE  ·  PG 03 / 05</span>
+      <button type="button" class="cmute">click anywhere to mute</button>
+    </div>
+  </footer>
+  </div>
+</section>
 
 <div class="panel">
   <details open>
@@ -217,13 +481,13 @@ body.in-work .hud { opacity: 0; }
         <button id="m-blob" aria-pressed="false">Blob only</button>
       </div>
       <div class="row"><label for="count">Balls</label><input id="count" type="range" min="6" max="96" value="53"><output id="count-o">53</output></div>
-      <div class="row"><label for="k">Goo</label><input id="k" type="range" min="2" max="90" value="36"><output id="k-o">36</output></div>
+      <div class="row"><label for="k">Goo</label><input id="k" type="range" min="2" max="90" value="14"><output id="k-o">14</output></div>
       <div class="row"><label for="plus">Glyphs</label><input id="plus" type="range" min="0" max="24" value="16"><output id="plus-o">16</output></div>
       <div class="row"><label for="rd">RD field</label><input id="rd" type="range" min="0" max="100" value="70"><output id="rd-o">70%</output></div>
       <div class="row"><label for="contours">Contours</label><input id="contours" type="range" min="0" max="16" value="3"><output id="contours-o">3</output></div>
       <div class="row"><label for="spacing">Line gap</label><input id="spacing" type="range" min="6" max="48" value="18"><output id="spacing-o">18</output></div>
-      <div class="row"><label for="glow">Glow</label><input id="glow" type="range" min="0" max="200" value="100"><output id="glow-o">1.0</output></div>
-      <div class="row"><label for="stiff">Springs</label><input id="stiff" type="range" min="8" max="220" value="70"><output id="stiff-o">70</output></div>
+      <div class="row"><label for="glow">Glow</label><input id="glow" type="range" min="0" max="200" value="60"><output id="glow-o">0.6</output></div>
+      <div class="row"><label for="stiff">Springs</label><input id="stiff" type="range" min="8" max="220" value="8"><output id="stiff-o">8</output></div>
       <div class="row"><label for="csize">Cursor size</label><input id="csize" type="range" min="0" max="70" value="30"><output id="csize-o">30</output></div>
       <div class="row"><label for="force">Pull force</label><input id="force" type="range" min="0" max="200" value="100"><output id="force-o">1.0</output></div>
       <div class="row"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="70"><output id="vol-o">70</output></div>
@@ -833,9 +1097,9 @@ setGlyphCount(Math.min(16, GN));
 const SECTIONS = [
   { name: 'Intro', title: 'A field that listens', layout: 0, labels: [['Scroll', 0, 262]] },
   { name: 'Work', title: 'Selected work', layout: 5, labels: [] }, // thumbnails instead of labels
+  { name: 'Capabilities', title: 'What I make', layout: 3, labels: [['3D', 62, -168], ['Motion', -225, 93], ['Web', 0, 345]] },
   { name: 'About', title: 'How it’s made', layout: 2, labels: [['Studio', -225, -25], ['Process', 247, -25], ['Tools', -64, 105]] },
-  { name: 'Contact', title: 'Say hello', layout: 3, labels: [['Email', 62, -168], ['Instagram', -225, 93], ['Say hi', 0, 345]] },
-];
+]; // Contact isn't a section: it lives behind the nav emblem
 // hover colours for the nav, in order: copper, yellow, green, cyan, lilac
 const NAV_COLORS = [[213, 143, 101], [229, 218, 73], [116, 210, 141], [121, 212, 236], [185, 157, 227]];
 const tint = { r: 1, g: 1, b: 1, amt: 0, target: null };
@@ -846,23 +1110,29 @@ const nearest = (x, y, pool) => pool.reduce((b, n) => {
 }, { n: null, d: Infinity }).n;
 const labelsEl = document.getElementById('labels');
 const sectionsEl = document.getElementById('sections');
-const secnav = document.getElementById('secnav');
+const navLinks = document.getElementById('navlinks');
 const labels = [];
 const navBtns = [];
+// set once the contact page exists; a nav link closes it before scrolling
+let goSection = si => scrollTo({ top: sectionsEl.children[si].offsetTop, behavior: reduce ? 'auto' : 'smooth' });
 SECTIONS.forEach((sec, si) => {
   const s = document.createElement('section');
   s.innerHTML = `<h2 class="sr">${sec.title}</h2>`;
   sectionsEl.appendChild(s);
-  const b = document.createElement('button');
-  b.textContent = sec.name;
-  b.addEventListener('click', () => scrollTo({ top: s.offsetTop, behavior: reduce ? 'auto' : 'smooth' }));
-  secnav.appendChild(b); navBtns.push(b);
-  const c = NAV_COLORS[si % NAV_COLORS.length];
-  b.style.setProperty('--c', `rgb(${c.join(',')})`);
-  const on = () => { tint.target = c; tick(noteFreq(10 + si * 2), 0.8, 0.035); };
-  const off = () => { if (tint.target === c) tint.target = null; };
-  b.addEventListener('pointerenter', on); b.addEventListener('pointerleave', off);
-  b.addEventListener('focus', on); b.addEventListener('blur', off);
+  // the intro is the top of the page; the logo is its link
+  if (si > 0) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = sec.name;
+    b.addEventListener('click', () => goSection(si));
+    navLinks.appendChild(b); navBtns[si] = b;
+    const c = NAV_COLORS[si % NAV_COLORS.length];
+    b.style.setProperty('--c', `rgb(${c.join(',')})`);
+    const on = () => { tint.target = c; tick(noteFreq(10 + si * 2), 0.8, 0.035); };
+    const off = () => { if (tint.target === c) tint.target = null; };
+    b.addEventListener('pointerenter', on); b.addEventListener('pointerleave', off);
+    b.addEventListener('focus', on); b.addEventListener('blur', off);
+  }
   for (const [text, x, y] of sec.labels) {
     const node = nearest(x, y, anchorPool);
     const twin = nearest(-node.rax, node.ray, anchorPool.filter(n => n.layer === node.layer));
@@ -873,19 +1143,14 @@ SECTIONS.forEach((sec, si) => {
     labels.push({ el, node, twin, si, a: 0 });
   }
 });
-const secEl = document.getElementById('sec');
-const secName = document.getElementById('sec-name'), secTitle = document.getElementById('sec-title');
 let section = -1;
 function setSection(i) {
   if (i === section) return;
   const first = section < 0;
   section = i;
-  secName.textContent = SECTIONS[i].name;
-  secTitle.textContent = SECTIONS[i].title;
-  secEl.classList.remove('in'); void secEl.offsetWidth; secEl.classList.add('in');
-  navBtns.forEach((b, j) => b.setAttribute('aria-current', String(j === i)));
+  navBtns.forEach((b, j) => b && b.setAttribute('aria-current', String(j === i)));
   // each section has its own arrangement of the field
-  if (!first) morphTo(SECTIONS[i].layout);
+  if (!first && !contactOpen) morphTo(SECTIONS[i].layout);
 }
 setSection(0);
 // higher on screen = higher note
@@ -904,7 +1169,7 @@ uniform vec3 uTint; uniform float uTintAmt; uniform float uInvert;
 uniform sampler2D uRD; uniform float uRDAmt; uniform float uWork;
 #define GN ${GN}
 uniform vec4 uGa[GN]; uniform vec4 uGb[GN]; uniform int uGCount;
-uniform vec4 uOrb; uniform float uDash;
+uniform vec4 uOrb; uniform float uDash; uniform vec2 uOff;
 
 float sdSeg(vec2 p, vec2 a, vec2 b, float r){
   vec2 pa = p - a, ba = b - a;
@@ -998,7 +1263,7 @@ vec3 scene(vec2 p){
 
   // orbit lines behind everything: heavy → hairline, then a dashed one (like the line sheet).
   // Their metric blends circle / square / diamond / drum with the current layout.
-  vec2 oc = p - vec2(20., 10.) * uOrb.x;
+  vec2 oc = p - uOff - vec2(20., 10.) * uOrb.x; // the rings travel with the joystick
   vec2 ao = abs(oc);
   float ol = uOrb.x * length(oc) + uOrb.y * max(ao.x, ao.y) * 1.02
            + uOrb.z * (ao.x + ao.y) * 0.8 + uOrb.w * max(ao.x * 1.5, ao.y * 0.78);
@@ -1158,7 +1423,7 @@ const loc = gl.getAttribLocation(prog, 'p');
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 const U = {};
-for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork'])
+for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uOff', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork'])
   U[n] = gl.getUniformLocation(prog, n);
 const arrA = new Float32Array(N * 4), arrB = new Float32Array(N * 4);
 const arrGa = new Float32Array(GN * 4), arrGb = new Float32Array(GN * 4);
@@ -1327,7 +1592,7 @@ addEventListener('resize', () => { clearTimeout(rdTimer); rdTimer = setTimeout((
 const worldToUv = (x, y) => [(x * scale + W / 2) / W, 1 - (y * scale + H / 2) / H];
 
 // ---------- controls ----------
-const P_ = { mode: 'attract', k: 36, glow: 1, stiff: 70, csize: 30, force: 1, contours: 3, spacing: 18, rd: 0.7 };
+const P_ = { mode: 'attract', k: 14, glow: 0.6, stiff: 8, csize: 30, force: 1, contours: 3, spacing: 18, rd: 0.7 };
 const bind = (id, key, fmt, map = v => v) => {
   const el = document.getElementById(id), out = document.getElementById(id + '-o');
   const set = () => { P_[key] = map(+el.value); out.textContent = fmt(P_[key]); };
@@ -1356,19 +1621,22 @@ for (const b of dashBtns) b.addEventListener('click', () => {
   dashBtns.forEach(x => x.setAttribute('aria-pressed', String(x === b)));
   tick(noteFreq(8 + dashMode), 0, 0.04, 'square', 0.05);
 });
-const invertBtn = document.getElementById('invert');
+// key shortcuts stay out of the way of anything you can type into (the contact form included)
+const typing = e => !!(e.target.closest && e.target.closest('input:not([type=checkbox]):not([type=range]), textarea, select, [contenteditable]'));
+const invertBtn = document.getElementById('invert'), swInvert = document.getElementById('sw-invert');
 let invert = false, invAmt = 0;
 function setInvert(on) {
   invert = on;
   document.documentElement.classList.toggle('inv', on);
   invertBtn.setAttribute('aria-pressed', String(on));
+  swInvert.setAttribute('aria-checked', String(on));
   scopeFg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim();
   scopeGlow = on ? 'rgba(18,19,19,0.35)' : 'rgba(244,246,245,0.7)';
   tick(noteFreq(on ? 3 : 6), 0, 0.05, 'square', 0.06);
 }
 invertBtn.addEventListener('click', () => setInvert(!invert));
 addEventListener('keydown', e => {
-  if ((e.key === 'i' || e.key === 'I') && !(e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && e.target.type !== 'range')) setInvert(!invert);
+  if ((e.key === 'i' || e.key === 'I') && !typing(e)) setInvert(!invert);
 });
 // Mirror: only the left half is simulated and drawn; the cursor is folded onto it,
 // so working either side of the screen pushes the same shapes and both halves match.
@@ -1381,7 +1649,7 @@ function setMirror(on) {
 }
 mirrorEl.addEventListener('change', () => setMirror(mirrorEl.checked));
 addEventListener('keydown', e => {
-  if ((e.key === 'm' || e.key === 'M') && !(e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && e.target.type !== 'range')) setMirror(!mirror);
+  if ((e.key === 'm' || e.key === 'M') && !typing(e)) setMirror(!mirror);
 });
 // pan follows the side of the screen the cursor is actually on
 const panOf = x => mirror ? Math.sign(mouse.rawX || 1) * Math.abs(x) / 450 : x / 450;
@@ -1414,18 +1682,25 @@ vol.addEventListener('input', () => {
   if (A.ctx && A.on) A.master.gain.setTargetAtTime(A.vol, A.ctx.currentTime, 0.05);
 });
 const soundBtn = document.getElementById('sound');
+const swMute = document.getElementById('sw-mute');
+// muting before the first click works too: audioInit reads A.on for its starting gain
+function setSound(on) {
+  A.on = on;
+  if (A.ctx) { A.ctx.resume(); A.master.gain.setTargetAtTime(on ? A.vol : 0, A.ctx.currentTime, 0.05); }
+  soundBtn.setAttribute('aria-pressed', String(on));
+  soundBtn.textContent = on ? 'Sound on' : 'Sound off';
+  swMute.setAttribute('aria-checked', String(!on));
+  for (const b of document.querySelectorAll('.cmute')) b.textContent = on ? 'click anywhere to mute' : 'click anywhere to unmute';
+}
 soundBtn.addEventListener('click', () => {
   if (!A.ctx) { audioInit(); return; }
-  A.ctx.resume();
-  A.on = !A.on;
-  A.master.gain.setTargetAtTime(A.on ? A.vol : 0, A.ctx.currentTime, 0.05);
-  soundBtn.setAttribute('aria-pressed', String(A.on));
-  soundBtn.textContent = A.on ? 'Sound on' : 'Sound off';
+  setSound(!A.on);
 });
+swMute.addEventListener('click', () => setSound(!A.on));
 morphBtn.addEventListener('click', () => { audioInit(); morph(); });
 document.getElementById('reset').addEventListener('click', () => morphTo(0));
 addEventListener('keydown', e => {
-  if (e.code === 'Space' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) {
+  if (e.code === 'Space' && !typing(e) && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement) && !(e.target instanceof HTMLAnchorElement)) {
     e.preventDefault(); morph();
   }
 });
@@ -1533,6 +1808,405 @@ canvas.addEventListener('pointerdown', e => {
 });
 addEventListener('pointerup', () => { mouse.down = false; });
 
+// ---------- HUD (Figma 184:1708): drives the same inputs as the debug panel, so the two never disagree ----------
+const fire = el => el.dispatchEvent(new Event('input'));
+
+// long slider adds dots: the bottom of the track is the base composition, the top is every extra shape
+const vSlider = document.getElementById('vslider'), vKnob = vSlider.querySelector('.knob');
+const DOT_MAX = nodes.length;
+vSlider.setAttribute('aria-valuemin', BASE);
+vSlider.setAttribute('aria-valuemax', DOT_MAX);
+const vTravel = () => vSlider.clientHeight - 8 - 18; // 4px inset at each end, 18px knob
+function syncDots() {
+  const c = +countEl.value, t = Math.max(0, (c - BASE) / Math.max(1, DOT_MAX - BASE));
+  vKnob.style.top = (4 + (1 - t) * vTravel()).toFixed(1) + 'px';
+  vSlider.setAttribute('aria-valuenow', c);
+}
+function setDots(c) {
+  c = Math.round(Math.max(BASE, Math.min(DOT_MAX, c)));
+  if (c === +countEl.value) return;
+  countEl.value = c; fire(countEl);
+}
+countEl.addEventListener('input', syncDots);
+const dotsAt = e => {
+  const r = vSlider.getBoundingClientRect();
+  setDots(BASE + (1 - (e.clientY - r.top - 4 - 9) / vTravel()) * (DOT_MAX - BASE));
+};
+vSlider.addEventListener('pointerdown', e => { vSlider.setPointerCapture(e.pointerId); audioInit(); dotsAt(e); });
+vSlider.addEventListener('pointermove', e => { if (vSlider.hasPointerCapture(e.pointerId)) dotsAt(e); });
+vSlider.addEventListener('keydown', e => {
+  const c = +countEl.value;
+  const k = { ArrowUp: c + 1, ArrowRight: c + 1, ArrowDown: c - 1, ArrowLeft: c - 1, PageUp: c + 5, PageDown: c - 5, Home: BASE, End: DOT_MAX }[e.key];
+  if (k === undefined) return;
+  e.preventDefault(); setDots(k);
+});
+new ResizeObserver(syncDots).observe(vSlider);
+syncDots();
+
+// switch two: orbit. The shapes go near-weightless and their homes wheel slowly round the centre (inner ones
+// faster, like a little solar system). Off, the wheel fades out over several seconds and the soft springs float
+// everything back to where it started.
+const ORBIT_W = 0.11;   // rad/s at 160 world units from the centre (~a minute a lap)
+const ORBIT_IN = 0.9, ORBIT_OUT = 0.4; // 1/s: eases in fairly briskly, lets go slowly
+const swOrbit = document.getElementById('sw-orbit');
+let orbitOn = false, orbitAmt = 0;
+swOrbit.addEventListener('click', () => {
+  orbitOn = !orbitOn;
+  swOrbit.setAttribute('aria-checked', String(orbitOn));
+  tick(noteFreq(orbitOn ? 12 : 7), 0, 0.05, 'square', 0.06);
+});
+// k scales it down where the layout has to hold (the Work grid)
+function orbitFrame(dt, k) {
+  orbitAmt += ((orbitOn ? 1 : 0) - orbitAmt) * (1 - Math.exp(-dt * (orbitOn ? ORBIT_IN : ORBIT_OUT)));
+  return orbitAmt * k;
+}
+// a shape's home, turned through its own accumulated angle and blended in by oa. The angle keeps running while
+// the orbit fades so the return is one continuous glide, and only resets once it's fully off.
+// While orbiting, the comp also spreads way out: its ~500-unit disc is stretched radially onto a squircle that
+// nearly fills the screen, so the outer ring sweeps past the corners and the inner shapes thin out in between.
+const ORBIT_R0 = 500;     // world units: the comp's own radius
+const ORBIT_SPREAD = 0.9; // of the half-screen, on each axis
+const ORBIT_SQUARE = 0.6; // 0 = ellipse, 1 = rectangle; in between keeps the corners reachable but rounded
+const ORBIT_PUSH = 0.5;   // radius exponent: 1 = scale evenly, lower = inner rings pushed further out
+function orbitHome(n, x, y, oa, dt) {
+  if (oa < 0.001) { if (!orbitOn) n.th = 0; return [x, y]; }
+  n.th = (n.th || 0) + dt * ORBIT_W * Math.min(1.8, 160 / Math.max(60, Math.hypot(x, y)));
+  const c = Math.cos(n.th), s = Math.sin(n.th);
+  const ux = (x * c - y * s) / ORBIT_R0, uy = (x * s + y * c) / ORBIT_R0, ul = Math.hypot(ux, uy);
+  // circle → square radial stretch (1 on the axes, √2 on the diagonals), only partly applied
+  const sq = ul / Math.max(Math.abs(ux), Math.abs(uy), 1e-6);
+  // and a power curve on the radius, so the dense middle thins out toward the edges instead of staying a clump
+  const k = (1 + (sq - 1) * ORBIT_SQUARE) * Math.pow(Math.min(ul, 1.05) + 1e-6, ORBIT_PUSH) / (ul + 1e-6);
+  const ox = ux * k * W / 2 / scale * ORBIT_SPREAD, oy = uy * k * H / 2 / scale * ORBIT_SPREAD;
+  return [x + (ox - x) * oa, y + (oy - y) * oa];
+}
+
+// switch one inverts (setInvert keeps it in step with I and the panel)
+swInvert.addEventListener('click', () => setInvert(!invert));
+
+// joystick: while held, deflection drives a velocity (the limiter keeps the comp inside a disc so it can't be thrown
+// off-screen); let go and the comp drifts slowly back to centre — the push is only ever temporary
+const joy = document.getElementById('joy'), joyKnob = document.getElementById('joy-knob');
+const JOY_R = 32, COMP_LIMIT = 220, COMP_SPEED = 420;
+const COMP_RETURN = 1.2; // 1/s: ~70% of the way home after a second, settled in about three
+const stick = { x: 0, y: 0, held: false, kx: NaN, ky: NaN };
+const comp = { x: 0, y: 0, k: 1 };
+const stickAt = e => {
+  const r = joy.getBoundingClientRect();
+  let x = (e.clientX - r.left - r.width / 2) / JOY_R, y = (e.clientY - r.top - r.height / 2) / JOY_R;
+  const l = Math.hypot(x, y);
+  if (l > 1) { x /= l; y /= l; }
+  stick.x = x; stick.y = y;
+};
+const clampComp = () => {
+  const l = Math.hypot(comp.x, comp.y);
+  if (l > COMP_LIMIT) { comp.x *= COMP_LIMIT / l; comp.y *= COMP_LIMIT / l; }
+};
+joy.addEventListener('pointerdown', e => {
+  joy.setPointerCapture(e.pointerId); stick.held = true; joy.classList.add('dragging'); stickAt(e);
+});
+joy.addEventListener('pointermove', e => { if (stick.held) stickAt(e); });
+const release = () => { stick.held = false; joy.classList.remove('dragging'); };
+joy.addEventListener('pointerup', release);
+joy.addEventListener('pointercancel', release);
+// arrow keys are the stick held over: hold to push, release to let it drift home
+const JOY_KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+const keysDown = new Set();
+const keyStick = () => {
+  let x = 0, y = 0;
+  for (const k of keysDown) { x += JOY_KEYS[k][0]; y += JOY_KEYS[k][1]; }
+  const l = Math.hypot(x, y) || 1;
+  stick.x = x / l; stick.y = y / l; stick.held = keysDown.size > 0;
+};
+joy.addEventListener('keydown', e => {
+  if (!JOY_KEYS[e.key]) return;
+  e.preventDefault(); keysDown.add(e.key); keyStick();
+});
+joy.addEventListener('keyup', e => { if (keysDown.delete(e.key)) keyStick(); });
+joy.addEventListener('blur', () => { keysDown.clear(); stick.held = false; });
+// k: 1 = offset applies, 0 = the comp eases home (Work grid, contact panel)
+function joyFrame(dt, k) {
+  if (stick.held) {
+    comp.x += stick.x * COMP_SPEED * dt; comp.y += stick.y * COMP_SPEED * dt;
+    clampComp();
+  } else {
+    const f = Math.exp(-dt * 14); stick.x *= f; stick.y *= f; // the knob springs back…
+    const g = Math.exp(-dt * COMP_RETURN); comp.x *= g; comp.y *= g; // …and the comp follows it home, slowly
+  }
+  comp.k += (k - comp.k) * (1 - Math.exp(-dt * 6));
+  const kx = Math.round(stick.x * JOY_R * 10) / 10, ky = Math.round(stick.y * JOY_R * 10) / 10;
+  if (kx !== stick.kx || ky !== stick.ky) { stick.kx = kx; stick.ky = ky; joyKnob.style.transform = `translate(${kx}px, ${ky}px)`; }
+  // mirror only simulates the left half, so a sideways shift would tear it down the seam
+  return [mirror ? 0 : comp.x * comp.k, comp.y * comp.k];
+}
+
+// D toggles the old instrument panel; ?debug opens with it showing
+if (new URLSearchParams(location.search).has('debug')) document.body.classList.add('debug');
+addEventListener('keydown', e => {
+  if ((e.key === 'd' || e.key === 'D') && !typing(e)) document.body.classList.toggle('debug');
+});
+
+// ---------- logo: fills like liquid pouring in from wherever the pointer crossed its edge ----------
+const logo = document.getElementById('logo'), pool = document.getElementById('logo-pool');
+const LOGO_W = 203, LOGO_H = 62.3118;
+const easeOutCubic = t => 1 - (1 - t) ** 3, easeInCubic = t => t * t * t;
+const pourState = { raf: 0, r: 0, full: false };
+// how far the pool must reach from (x, y) to cover the whole mark, plus the turbulence's wobble
+const coverR = (x, y) => Math.max(Math.hypot(x, y), Math.hypot(LOGO_W - x, y), Math.hypot(x, LOGO_H - y), Math.hypot(LOGO_W - x, LOGO_H - y)) + 12;
+function pour(x, y, r0, r1, dur, ease, done) {
+  cancelAnimationFrame(pourState.raf);
+  pool.setAttribute('cx', x.toFixed(1)); pool.setAttribute('cy', y.toFixed(1));
+  const set = r => { pourState.r = r; pool.setAttribute('r', r.toFixed(2)); };
+  if (reduce) { set(r1); done && done(); return; }
+  const t0 = performance.now();
+  const stepPour = now => {
+    const t = Math.min(1, (now - t0) / (dur * 1000));
+    set(r0 + (r1 - r0) * ease(t));
+    if (t < 1) pourState.raf = requestAnimationFrame(stepPour); else if (done) done();
+  };
+  pourState.raf = requestAnimationFrame(stepPour);
+}
+// the point on the logo's box nearest to where the pointer is, in SVG units
+function edgePoint(e) {
+  const r = logo.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * LOGO_W, y = (e.clientY - r.top) / r.height * LOGO_H;
+  return [Math.max(0, Math.min(LOGO_W, x)), Math.max(0, Math.min(LOGO_H, y))];
+}
+function fillFrom(x, y) {
+  pourState.full = false;
+  pour(x, y, 0, coverR(x, y), 0.7, easeOutCubic, () => { pourState.full = true; });
+}
+function drainTo(x, y) {
+  // a full pool recentres on the exit and recedes into it; one still pouring just ebbs where it is
+  if (pourState.full) pour(x, y, coverR(x, y), 0, 0.55, easeInCubic);
+  else pour(+pool.getAttribute('cx'), +pool.getAttribute('cy'), pourState.r, 0, 0.35, easeInCubic);
+  pourState.full = false;
+}
+logo.addEventListener('pointerenter', e => fillFrom(...edgePoint(e)));
+logo.addEventListener('pointerleave', e => drainTo(...edgePoint(e)));
+logo.addEventListener('focus', () => fillFrom(0, LOGO_H / 2));
+logo.addEventListener('blur', () => drainTo(LOGO_W, LOGO_H / 2));
+
+// ---------- contact: emblem → fill → tile wipe → page (ported from commms src/contact/, GSAP swapped for rAF) ----------
+// The 64×64 emblem: 25 cells on a 45° lattice (4-3-4-3-4-3-4), rest scale falling off from the middle.
+const EMBLEM_SIZE = 64, EMBLEM_ROWS = 7, E_STEP = 1 / 4, E_ROW_STEP = E_STEP / 2;
+const EMBLEM_CELLS = [];
+for (let row = 0; row < EMBLEM_ROWS; row++) {
+  const wide = row % 2 === 0;
+  for (let i = 0; i < (wide ? 4 : 3); i++) {
+    const x = wide ? E_STEP * i + E_STEP / 2 : E_STEP * i + E_STEP;
+    const y = E_ROW_STEP * (row + 1);
+    const dist = Math.hypot(x - 0.5, y - 0.5) / Math.SQRT1_2;
+    EMBLEM_CELLS.push({ x, y, restScale: 0.86 - 0.52 * Math.min(1, dist) });
+  }
+}
+const EMBLEM_POINTER = { radius: 90, boost: 0.6 };
+// proximity swell, smoothstep falloff (commms home/magnetics.ts)
+function cellScale(cell, p) {
+  if (!p) return cell.restScale;
+  const d = Math.hypot(p.x - cell.x * EMBLEM_SIZE, p.y - cell.y * EMBLEM_SIZE);
+  if (d >= EMBLEM_POINTER.radius) return cell.restScale;
+  const t = 1 - d / EMBLEM_POINTER.radius;
+  return Math.min(1, cell.restScale + t * t * (3 - 2 * t) * EMBLEM_POINTER.boost);
+}
+const emblem = (() => {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'emblem';
+  el.setAttribute('aria-label', 'Contact');
+  el.setAttribute('aria-controls', 'contact');
+  el.setAttribute('aria-expanded', 'false');
+  const cells = EMBLEM_CELLS.map(cell => {
+    const s = document.createElement('span');
+    s.className = 'emblem-cell';
+    s.setAttribute('aria-hidden', 'true');
+    s.style.left = cell.x * 100 + '%';
+    s.style.top = cell.y * 100 + '%';
+    s.style.setProperty('--s', String(cell.restScale));
+    el.append(s);
+    return s;
+  });
+  // two writers, never at once: the pointer pass, and a fill that owns --s until it's back at 0
+  let pointer = null, fillT = 0, filling = false, raf = 0;
+  const writeAll = () => {
+    raf = 0;
+    EMBLEM_CELLS.forEach((cell, i) => {
+      const c = cell.restScale;
+      cells[i].style.setProperty('--s', String(filling ? c + (1 - c) * fillT : cellScale(cell, pointer)));
+    });
+  };
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(writeAll); };
+  return {
+    el,
+    setPointer(p) { if (reduce || filling) return; pointer = p; schedule(); },
+    setFill(t) { fillT = Math.min(1, Math.max(0, t)); filling = fillT > 0; schedule(); },
+  };
+})();
+document.querySelector('.nav').appendChild(emblem.el);
+addEventListener('pointermove', e => {
+  const r = emblem.el.getBoundingClientRect(), k = EMBLEM_SIZE / r.width;
+  const x = (e.clientX - r.left) * k, y = (e.clientY - r.top) * k;
+  const near = x > -EMBLEM_POINTER.radius && x < EMBLEM_SIZE + EMBLEM_POINTER.radius && y > -EMBLEM_POINTER.radius && y < EMBLEM_SIZE + EMBLEM_POINTER.radius;
+  emblem.setPointer(near ? { x, y } : null);
+}, { passive: true });
+
+// Beat 3's geometry (commms contact/wipe-geometry.ts): diamond tiles on the emblem's own lattice, building on from
+// the middle of the right edge by taxicab distance so the front is a diamond, then building off in the same order.
+const TILE_SPAN = 200, TILE_PITCH = TILE_SPAN / 2, TILE_RADIUS = 24, TILE_OVERLAP = 1.16, TILE_GROW = 0.3;
+const TILE_SIDE = TILE_SPAN * TILE_OVERLAP / Math.SQRT2;
+const clamp01 = t => Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0;
+function tileField(w, h) {
+  w = Math.max(1, w); h = Math.max(1, h);
+  const tiles = [];
+  const rows = Math.ceil(h / TILE_PITCH) + 2, cols = Math.ceil(w / (TILE_PITCH * 2)) + 2;
+  const originRow = Math.round(h / 2 / TILE_PITCH);
+  const originInset = originRow % 2 === 0 ? 0 : TILE_PITCH;
+  const ox = Math.round((w - originInset) / (TILE_PITCH * 2)) * TILE_PITCH * 2 + originInset;
+  const oy = originRow * TILE_PITCH;
+  for (let row = -1; row < rows; row++) {
+    const y = row * TILE_PITCH, inset = row % 2 === 0 ? 0 : TILE_PITCH;
+    for (let col = -1; col < cols; col++) {
+      const x = col * TILE_PITCH * 2 + inset;
+      tiles.push({ x, y, d: Math.abs(x - ox) + Math.abs(y - oy) });
+    }
+  }
+  const ds = tiles.map(t => t.d), min = Math.min(...ds), span = Math.max(...ds) - min || 1;
+  return tiles.map(t => ({ x: t.x, y: t.y, order: (t.d - min) / span }));
+}
+const tileScale = (order, t) => easeOutCubic(clamp01((t - clamp01(order) * (1 - TILE_GROW)) / TILE_GROW));
+// p runs 0 → 2: first on, first off, so one front travels one way for the whole transition
+const tileCycleScale = (order, p) => p <= 1 ? tileScale(order, p) : 1 - tileScale(order, p - 1);
+function buildTileLayer() {
+  const el = document.createElement('div');
+  el.className = 'wipe-tiles';
+  const tiles = tileField(innerWidth, innerHeight), nodesT = [], lastS = [];
+  for (const t of tiles) {
+    const s = document.createElement('span');
+    s.className = 'wipe-tile';
+    s.style.left = t.x + 'px'; s.style.top = t.y + 'px';
+    s.style.width = s.style.height = TILE_SIDE + 'px';
+    s.style.borderRadius = TILE_RADIUS + 'px';
+    el.appendChild(s); nodesT.push(s); lastS.push(-1);
+  }
+  return {
+    el,
+    write(p) {
+      for (let i = 0; i < tiles.length; i++) {
+        const s = Math.round(tileCycleScale(tiles[i].order, p) * 1000) / 1000;
+        if (s === lastS[i]) continue; // most tiles are dormant on any frame
+        lastS[i] = s;
+        nodesT[i].style.transform = `translate(-50%, -50%) rotate(45deg) scale(${s})`;
+      }
+    },
+  };
+}
+const PHASE_S = 0.75, FILL_S = 0.25;
+const easePower2Out = t => 1 - (1 - t) ** 2;
+const tween = (dur, ease, fn) => new Promise(res => {
+  const t0 = performance.now();
+  const stepT = now => {
+    const t = Math.min(1, (now - t0) / (dur * 1000));
+    fn(ease(t));
+    if (t < 1) requestAnimationFrame(stepT); else res();
+  };
+  requestAnimationFrame(stepT);
+});
+
+// Beat 4: the page. The goo canvas itself moves into the left panel (one GL context, same field you were playing with).
+const contactEl = document.getElementById('contact'), contactGoo = document.getElementById('contact-goo');
+const canvasHome = canvas.nextSibling;
+let contactOpen = false, wiping = false;
+function fitCanvas() {
+  resize();
+  if (rd) rd.rebuild();
+}
+function swapContact(open) {
+  contactOpen = open;
+  contactEl.hidden = !open;
+  document.body.classList.toggle('contact-open', open);
+  document.documentElement.style.overflow = open ? 'hidden' : '';
+  if (open) { contactGoo.appendChild(canvas); contactEl.scrollTop = 0; }
+  else document.body.insertBefore(canvas, canvasHome);
+  mouse.inside = false; mouse.down = false;
+  fitCanvas();
+  morphTo(open ? 0 : SECTIONS[Math.max(0, section)].layout);
+  emblem.el.setAttribute('aria-expanded', String(open));
+  emblem.el.setAttribute('aria-label', open ? 'Close contact' : 'Contact');
+}
+async function setContact(open, { focus = true } = {}) {
+  if (open === contactOpen || wiping) return;
+  if (reduce) {
+    swapContact(open);
+  } else {
+    wiping = true;
+    const layer = buildTileLayer();
+    document.body.appendChild(layer.el);
+    layer.write(0);
+    // going in, the emblem fills first and the build carries straight on; going out, it re-forms at the end
+    if (open) await tween(FILL_S, easePower2Out, v => emblem.setFill(v));
+    await tween(PHASE_S, t => t, t => layer.write(t));
+    swapContact(open); // the one frame where the field hides everything
+    await tween(PHASE_S, t => t, t => layer.write(1 + t));
+    layer.el.remove();
+    if (!open) await tween(FILL_S, easePower2Out, v => emblem.setFill(1 - v));
+    else emblem.setFill(0);
+    wiping = false;
+  }
+  if (focus) (open ? document.getElementById('contact-title') : emblem.el).focus({ preventScroll: true });
+}
+emblem.el.addEventListener('click', () => { audioInit(); setContact(!contactOpen); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && contactOpen) setContact(false); });
+goSection = async si => {
+  if (contactOpen) await setContact(false, { focus: false });
+  scrollTo({ top: sectionsEl.children[si].offsetTop, behavior: reduce ? 'auto' : 'smooth' });
+};
+logo.addEventListener('click', async e => {
+  e.preventDefault();
+  if (contactOpen) await setContact(false, { focus: false });
+  scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+});
+// the same footer closes the main flow; its own "contact" opens the page rather than scrolling it
+const mainFoot = document.getElementById('sitefoot').cloneNode(true);
+mainFoot.removeAttribute('id');
+mainFoot.classList.add('main-foot');
+sectionsEl.after(mainFoot);
+// the HUD would sit on top of the footer, so it steps aside while the footer's in view
+new IntersectionObserver(([e]) => document.body.classList.toggle('at-foot', e.isIntersecting)).observe(mainFoot);
+// one listener for both copies (cloneNode doesn't carry listeners)
+addEventListener('click', e => {
+  if (e.target.closest('.cmute')) { setSound(!A.on); return; }
+  const go = e.target.closest('[data-go]');
+  if (!go) return;
+  if (go.dataset.go !== 'contact') goSection(+go.dataset.go);
+  else if (contactOpen) contactEl.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+  else { audioInit(); setContact(true); }
+});
+
+// the form, plain for now: the commms version fed typing into the blob; that comes back mapped to the goo later
+const SERVICES = ['Brand Design', 'Landing Page', '3D Rendering', 'Product Rendering', 'eCommerce', 'Marketing Site', '3D Animation', '3D Website', 'User Experience Design', 'Brand Strategy', 'App Design'];
+const chipsEl = document.getElementById('chips');
+for (const s of SERVICES) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = s; b.setAttribute('aria-pressed', 'false');
+  b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')));
+  chipsEl.appendChild(b);
+}
+const cform = document.getElementById('cform');
+cform.budget.addEventListener('change', () => cform.budget.classList.add('set'));
+cform.addEventListener('submit', e => {
+  e.preventDefault();
+  const f = cform.elements;
+  const services = [...chipsEl.querySelectorAll('[aria-pressed="true"]')].map(b => b.textContent);
+  const lines = [f.project.value.trim(), '', 'Name: ' + f.name.value.trim(), 'Email: ' + f.email.value.trim()];
+  if (f.phone.value.trim()) lines.push('Phone: ' + f.phone.value.trim());
+  lines.push('Budget: ' + f.budget.value);
+  if (services.length) lines.push('Services: ' + services.join(', '));
+  const body = lines.join('\n');
+  location.href = 'mailto:adam.tarr.studio@gmail.com?subject=' + encodeURIComponent('Project inquiry from ' + f.name.value.trim()) + '&body=' + encodeURIComponent(body);
+});
+// ?contact opens straight onto the page (no wipe), handy for sharing and for checking it
+if (new URLSearchParams(location.search).has('contact')) swapContact(true);
+
 // ---------- sim ----------
 const CORNER = [1, 0.62, 0.4, 0.2]; // sq → corner radius fraction
 const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -1551,7 +2225,8 @@ function frame(now) {
   // Work is as tall as its grid, and scrolling inside it scrolls the tiles
   const secEls = sectionsEl.children, workEl = secEls[1];
   const wantH = Math.max(innerHeight, Math.ceil(grid().contentCss));
-  if (workEl._h !== wantH) { workEl.style.height = wantH + 'px'; workEl._h = wantH; }
+  // held while contact is open: the canvas is panel-sized then, and a shorter page would move your scroll spot
+  if (workEl._h !== wantH && !contactOpen) { workEl.style.height = wantH + 'px'; workEl._h = wantH; }
   workScroll = Math.max(0, Math.min(scrollY - workEl.offsetTop, wantH - innerHeight));
   let si = 0;
   for (let i = 0; i < secEls.length; i++) if (secEls[i].offsetTop <= scrollY + innerHeight * 0.5) si = i;
@@ -1577,22 +2252,27 @@ function frame(now) {
 
   const scrollD = (workScroll - workScrollApplied) * grid().u * workAmt;
   workScrollApplied = workScroll;
-  const stiff = P_.stiff, damp = 2 * Math.sqrt(stiff) * 0.55;
+  // orbit: weaker springs and less damping read as weightlessness
+  const orb = orbitFrame(dt, 1 - workAmt);
+  const stiff = P_.stiff * (1 - 0.6 * orb), damp = 2 * Math.sqrt(P_.stiff) * 0.55 * (1 - 0.65 * orb);
+  // joystick: the comp slides home while the Work grid or the contact panel needs it centred
+  const [offX, offY] = joyFrame(dt, contactOpen ? 0 : 1 - workAmt);
   for (const n of nodes) {
     if (scrollD && inGrid(n)) n.y -= scrollD;
     // case-study shells show in Work whatever the ball count
     const want = n.vis || (n.tile >= 0 && (to === WORK || from === WORK));
     n.s += ((want ? 1 : 0) - n.s) * (1 - Math.exp(-dt * 6));
     const a = layouts[from](n), b = layouts[to](n);
-    let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
-    n.ang = a.a + (b.a - a.a) * m;
+    let [tx, ty] = orbitHome(n, a.x + (b.x - a.x) * m, a.y + (b.y - a.y) * m, orb, dt);
+    tx += offX; ty += offY;
+    n.ang = a.a + (b.a - a.a) * m + (n.th || 0) * orb; // shapes turn with their orbit
     const cr0 = CORNER[n.sq];
     n.rs = (a.rs ?? 1) + ((b.rs ?? 1) - (a.rs ?? 1)) * m;
     n.cr = (a.cr ?? cr0) + ((b.cr ?? cr0) - (a.cr ?? cr0)) * m;
     n.ex = (a.ex ?? 0) + ((b.ex ?? 0) - (a.ex ?? 0)) * m;
     n.ey = (a.ey ?? 0) + ((b.ey ?? 0) - (a.ey ?? 0)) * m;
     // idle drift; tiles hold still in the grid so the margins stay true
-    const dr = (n.tile >= 0 ? 1 - workAmt : 1) * 4;
+    const dr = (n.tile >= 0 ? 1 - workAmt : 1) * 4 * (1 + 3 * orb); // and they bob more when weightless
     if (!reduce) { tx += Math.sin(time * 0.7 + n.ph) * dr; ty += Math.cos(time * 0.55 + n.ph * 1.3) * dr; }
     let fx = (tx - n.x) * stiff, fy = (ty - n.y) * stiff;
 
@@ -1619,8 +2299,10 @@ function frame(now) {
   for (const q of glyphs) {
     q.s += ((q.vis ? 1 : 0) - q.s) * (1 - Math.exp(-dt * 6));
     const a = layouts[from](q), b = layouts[to](q);
-    let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
-    if (!reduce) { tx += Math.sin(time * 0.6 + q.ph) * 3; ty += Math.cos(time * 0.5 + q.ph) * 3; }
+    let [tx, ty] = orbitHome(q, a.x + (b.x - a.x) * m, a.y + (b.y - a.y) * m, orb, dt);
+    tx += offX; ty += offY;
+    const qd = 3 * (1 + 3 * orb);
+    if (!reduce) { tx += Math.sin(time * 0.6 + q.ph) * qd; ty += Math.cos(time * 0.5 + q.ph) * qd; }
     let fx = (tx - q.x) * stiff, fy = (ty - q.y) * stiff;
     if (mouse.inside && P_.mode !== 'blob') {
       const dx = q.x - mouse.x, dy = q.y - mouse.y, d = Math.hypot(dx, dy) + 1e-3;
@@ -1792,6 +2474,7 @@ function frame(now) {
   gl.uniform1i(U.uGCount, pc);
   const oa = LAYOUT_ORB[from], ob = LAYOUT_ORB[to];
   gl.uniform4f(U.uOrb, ...oa.map((v, j) => v + (ob[j] - v) * m));
+  gl.uniform2f(U.uOff, offX, offY);
   gl.uniform1f(U.uDash, dashMode);
   gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
   gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
