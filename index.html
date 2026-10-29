@@ -1,0 +1,1370 @@
+<title>Goo Field</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed WebGL field, a quiet HUD top-left, a compact instrument panel bottom-left. Single dark look by choice. */
+:root {
+  --bg: #121313;
+  --panel: rgba(24, 25, 26, 0.82);
+  --line: rgba(232, 236, 236, 0.14);
+  --fg: #e8ecec;
+  --muted: #8a9092;
+  --accent: #f4f6f5;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+/* inverted: the UI flips with the field so it stays readable */
+:root.inv {
+  --bg: #edecec;
+  --panel: rgba(236, 236, 235, 0.82);
+  --line: rgba(18, 19, 19, 0.16);
+  --fg: #121313;
+  --muted: #62696b;
+  --accent: #121313;
+  color-scheme: light;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  overflow-x: hidden;
+}
+/* invisible scroll track: one screen per section, the field stays fixed behind */
+.sections section { height: 100vh; height: 100svh; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.label {
+  position: absolute; left: 0; top: 0;
+  font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+  opacity: 0; will-change: transform, opacity;
+}
+.label.on-core { color: var(--bg); }
+.label.on-shell { color: var(--fg); }
+.sec { display: grid; gap: 2px; margin-top: 12px; }
+.sec span { font-size: 11px; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
+.sec strong { font-size: 20px; font-weight: 500; letter-spacing: 0.01em; }
+.sec.in { animation: sec-in 0.6s ease-out; }
+@keyframes sec-in { from { opacity: 0.2; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.secnav {
+  position: fixed; top: 50%; transform: translateY(-50%);
+  right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 10px; justify-items: end;
+}
+.secnav button {
+  font: inherit; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); background: none; border: 0; padding: 2px 0; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+}
+.secnav button::after { content: ""; width: 10px; height: 1px; background: currentColor; transition: width 0.3s; }
+.secnav button[aria-current="true"] { color: var(--fg); }
+.secnav button[aria-current="true"]::after { width: 28px; }
+.secnav button:hover, .secnav button:focus-visible { color: var(--c, var(--fg)); }
+@media (prefers-reduced-motion: reduce) { .sec.in { animation: none; } }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: none; }
+.hud {
+  position: fixed;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  left: max(16px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
+  display: grid;
+  gap: 4px;
+}
+.hud h1 { margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; }
+.hud p { margin: 0; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+.panel {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: min(280px, calc(100vw - 32px));
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+  font-size: 11px;
+}
+.panel summary { cursor: pointer; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); list-style: none; }
+.panel summary::-webkit-details-marker { display: none; }
+.panel details[open] summary { margin-bottom: 10px; }
+.rows { display: grid; gap: 9px; }
+.row { display: grid; grid-template-columns: 78px 1fr 34px; align-items: center; gap: 8px; }
+.row label { color: var(--muted); }
+.row output { text-align: right; font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button, .btns button {
+  font: inherit; color: var(--fg); background: transparent; border: 0; padding: 6px 0; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btns button[aria-pressed="false"] { color: var(--muted); }
+.btns button { border: 1px solid var(--line); border-radius: 6px; }
+.btns button:hover, .seg button:hover { background: rgba(232,236,236,0.08); }
+.seg button[aria-pressed="true"]:hover { background: var(--fg); }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.check { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+.scope {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: min(320px, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  pointer-events: none;
+}
+.scope header { display: flex; justify-content: space-between; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
+.scope header output { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+.scope canvas { position: static; width: 100%; height: 72px; cursor: default; }
+@media (max-width: 660px) {
+  .scope { bottom: auto; top: calc(16px + env(safe-area-inset-top, 0px)); width: min(170px, calc(100vw - 32px)); }
+  .scope canvas { height: 44px; }
+}
+.check input { accent-color: var(--accent); margin: 0; }
+</style>
+
+<canvas id="c"></canvas>
+
+<div class="labels" id="labels" aria-hidden="true"></div>
+
+<main class="sections" id="sections"></main>
+
+<div class="hud">
+  <h1>Goo Field</h1>
+  <p>scroll for sections · move to pull · click to pulse</p>
+  <p>sound starts on your first click</p>
+  <div class="sec" id="sec"><span id="sec-name"></span><strong id="sec-title"></strong></div>
+</div>
+
+<nav class="secnav" id="secnav" aria-label="Sections"></nav>
+
+<div class="scope" aria-hidden="true">
+  <canvas id="scope"></canvas>
+</div>
+
+<div class="panel">
+  <details open>
+    <summary>Controls</summary>
+    <div class="rows">
+      <div class="seg" role="group" aria-label="Cursor mode">
+        <button id="m-attract" aria-pressed="true">Attract</button>
+        <button id="m-repel" aria-pressed="false">Repel</button>
+        <button id="m-blob" aria-pressed="false">Blob only</button>
+      </div>
+      <div class="row"><label for="count">Balls</label><input id="count" type="range" min="6" max="96" value="53"><output id="count-o">53</output></div>
+      <div class="row"><label for="k">Goo</label><input id="k" type="range" min="2" max="90" value="36"><output id="k-o">36</output></div>
+      <div class="row"><label for="plus">Plus marks</label><input id="plus" type="range" min="0" max="16" value="8"><output id="plus-o">8</output></div>
+      <div class="row"><label for="rd">RD field</label><input id="rd" type="range" min="0" max="100" value="70"><output id="rd-o">70%</output></div>
+      <div class="row"><label for="contours">Contours</label><input id="contours" type="range" min="0" max="16" value="3"><output id="contours-o">3</output></div>
+      <div class="row"><label for="spacing">Line gap</label><input id="spacing" type="range" min="6" max="48" value="18"><output id="spacing-o">18</output></div>
+      <div class="row"><label for="glow">Glow</label><input id="glow" type="range" min="0" max="200" value="100"><output id="glow-o">1.0</output></div>
+      <div class="row"><label for="stiff">Springs</label><input id="stiff" type="range" min="8" max="220" value="70"><output id="stiff-o">70</output></div>
+      <div class="row"><label for="csize">Cursor size</label><input id="csize" type="range" min="0" max="70" value="30"><output id="csize-o">30</output></div>
+      <div class="row"><label for="force">Pull force</label><input id="force" type="range" min="0" max="200" value="100"><output id="force-o">1.0</output></div>
+      <div class="row"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="100" value="70"><output id="vol-o">70</output></div>
+      <label class="check" for="morphclick"><input id="morphclick" type="checkbox" checked> Morph on click</label>
+      <label class="check" for="mirror"><input id="mirror" type="checkbox"> Mirror down the centre (M)</label>
+      <div class="btns">
+        <button id="morph">Morph</button>
+        <button id="reset">Reset</button>
+        <button id="sound" aria-pressed="true">Sound on</button>
+        <button id="invert" aria-pressed="false">Invert (I)</button>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script>
+(() => {
+const N = 96;
+const PN = 16; // plus marks (kept small: uniform slots are shared with the 96 shapes)
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false });
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---------- audio ----------
+// A-minor pentatonic so every overlap lands in key.
+const SCALE = [0, 3, 5, 7, 10];
+const noteFreq = i => 110 * Math.pow(2, (SCALE[((i % 5) + 5) % 5] + 12 * Math.floor(i / 5)) / 12);
+const A = { ctx: null, on: true, vol: 0.7, speed: 0, lastTick: 0, lastCascade: 0 };
+const clampPan = v => Math.max(-0.9, Math.min(0.9, v));
+
+function audioInit() {
+  if (A.ctx) { if (A.ctx.state === 'suspended') A.ctx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const ctx = A.ctx = new AC();
+  A.master = ctx.createGain();
+  A.master.gain.value = A.on ? A.vol : 0;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -18; comp.ratio.value = 4;
+  A.master.connect(comp); comp.connect(ctx.destination);
+  A.analyser = ctx.createAnalyser();
+  A.analyser.fftSize = 2048;
+  A.scopeBuf = new Float32Array(A.analyser.fftSize);
+  comp.connect(A.analyser);
+  A.bus = ctx.createGain(); A.bus.connect(A.master);
+
+  // ping-pong delay with a darkening feedback loop
+  A.send = ctx.createGain(); A.send.gain.value = 0.4;
+  const dl = ctx.createDelay(1), dr = ctx.createDelay(1);
+  dl.delayTime.value = 0.24; dr.delayTime.value = 0.36;
+  const fb = ctx.createGain(); fb.gain.value = 0.42;
+  const tone = ctx.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 2400;
+  const pl = ctx.createStereoPanner(); pl.pan.value = -0.75;
+  const pr = ctx.createStereoPanner(); pr.pan.value = 0.75;
+  A.send.connect(dl);
+  dl.connect(pl); pl.connect(A.master);
+  dl.connect(dr); dr.connect(pr); pr.connect(A.master);
+  dr.connect(tone); tone.connect(fb); fb.connect(dl);
+
+  // drone that follows the cursor
+  A.droneGain = ctx.createGain(); A.droneGain.gain.value = 0;
+  A.droneFilter = ctx.createBiquadFilter();
+  A.droneFilter.type = 'lowpass'; A.droneFilter.frequency.value = 200; A.droneFilter.Q.value = 7;
+  A.droneOscs = [['sawtooth', 55], ['sawtooth', 55.35], ['sine', 110]].map(([type, f]) => {
+    const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
+    o.connect(A.droneFilter); o.start(); return o;
+  });
+  A.droneFilter.connect(A.droneGain);
+
+  // proximity modulation, all at zero depth until the cursor nears the centre:
+  // a wobble LFO on cutoff + pitch, and an FM growl on the two saws
+  A.lfo = ctx.createOscillator(); A.lfo.frequency.value = 0.5;
+  A.lfoCut = ctx.createGain(); A.lfoCut.gain.value = 0;
+  A.lfoPitch = ctx.createGain(); A.lfoPitch.gain.value = 0;
+  A.lfo.connect(A.lfoCut); A.lfoCut.connect(A.droneFilter.frequency);
+  A.lfo.connect(A.lfoPitch);
+  for (const o of A.droneOscs) A.lfoPitch.connect(o.detune);
+  A.lfo.start();
+  A.growl = ctx.createOscillator(); A.growl.frequency.value = 55 * 1.5;
+  A.growlGain = ctx.createGain(); A.growlGain.gain.value = 0;
+  A.growl.connect(A.growlGain);
+  A.growlGain.connect(A.droneOscs[0].frequency); A.growlGain.connect(A.droneOscs[1].frequency);
+  A.growl.start();
+  A.droneGain.connect(A.bus);
+  const dSend = ctx.createGain(); dSend.gain.value = 0.25;
+  A.droneGain.connect(dSend); dSend.connect(A.send);
+
+  const len = ctx.sampleRate * 0.4;
+  A.noise = ctx.createBuffer(1, len, ctx.sampleRate);
+  const ch = A.noise.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+}
+const live = () => A.ctx && A.on && A.ctx.state === 'running';
+
+function voiceOut(pan, send) {
+  const ctx = A.ctx;
+  const p = ctx.createStereoPanner(); p.pan.value = clampPan(pan);
+  const s = ctx.createGain(); s.gain.value = send;
+  p.connect(A.bus); p.connect(s); s.connect(A.send);
+  return { node: p, done: () => { p.disconnect(); s.disconnect(); } };
+}
+function env(g, t, peak, att, dur) {
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + att);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+}
+
+// Alien FM pluck: inharmonic modulator (metallic, un-tuned overtones), a resonant
+// lowpass that closes fast (dark), a downward pitch bend and a slow wobble,
+// plus a sub an octave below for weight.
+function pluck(freq, pan, bright = 1, vel = 0.2, dur = 1, ratio = 1.73) {
+  if (!live()) return;
+  const ctx = A.ctx, t = ctx.currentTime, end = t + dur + 0.05;
+  const car = ctx.createOscillator(); car.type = 'sine';
+  car.frequency.setValueAtTime(freq * 1.06, t);
+  car.frequency.exponentialRampToValueAtTime(freq, t + 0.06);
+  car.frequency.exponentialRampToValueAtTime(freq * 0.97, t + dur);
+  const mod = ctx.createOscillator(); mod.frequency.value = freq * ratio;
+  const mg = ctx.createGain();
+  mg.gain.setValueAtTime(freq * 3.2 * bright, t);
+  mg.gain.exponentialRampToValueAtTime(freq * 0.2, t + dur * 0.5);
+  mod.connect(mg); mg.connect(car.frequency);
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 5.3;
+  const lg = ctx.createGain(); lg.gain.value = freq * 0.012;
+  lfo.connect(lg); lg.connect(car.frequency);
+  const sub = ctx.createOscillator(); sub.type = 'triangle'; sub.frequency.value = freq / 2;
+  const sg = ctx.createGain(); env(sg, t, vel * 0.5, 0.006, dur * 0.8);
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 9;
+  f.frequency.setValueAtTime(Math.min(freq * 7 * bright, 6000), t);
+  f.frequency.exponentialRampToValueAtTime(Math.max(freq * 1.1, 80), t + dur * 0.4);
+  const g = ctx.createGain(); env(g, t, vel, 0.004, dur);
+  const o = voiceOut(pan, 0.55);
+  car.connect(f); f.connect(g); g.connect(o.node);
+  sub.connect(sg); sg.connect(o.node);
+  for (const osc of [car, mod, lfo, sub]) { osc.start(t); osc.stop(end); }
+  car.onended = () => { o.done(); f.disconnect(); g.disconnect(); mg.disconnect(); lg.disconnect(); sg.disconnect(); };
+}
+
+// short downward-chirping blip
+function tick(freq, pan, vel = 0.07, type = 'sine', dur = 0.12) {
+  if (!live()) return;
+  const ctx = A.ctx, t = ctx.currentTime;
+  const osc = ctx.createOscillator(); osc.type = type;
+  osc.frequency.setValueAtTime(freq * 2, t);
+  osc.frequency.exponentialRampToValueAtTime(freq, t + 0.035);
+  const g = ctx.createGain(); env(g, t, vel, 0.002, dur);
+  const o = voiceOut(pan, 0.6);
+  osc.connect(g); g.connect(o.node);
+  osc.start(t); osc.stop(t + dur + 0.05);
+  osc.onended = () => { o.done(); g.disconnect(); };
+}
+
+// click pulse: falling resonant saw + a noise crack
+function zap(pan) {
+  if (!live()) return;
+  const ctx = A.ctx, t = ctx.currentTime;
+  const osc = ctx.createOscillator(); osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(880, t);
+  osc.frequency.exponentialRampToValueAtTime(42, t + 0.5);
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 7;
+  f.frequency.setValueAtTime(2600, t);
+  f.frequency.exponentialRampToValueAtTime(140, t + 0.5);
+  const g = ctx.createGain(); env(g, t, 0.16, 0.004, 0.55);
+  const n = ctx.createBufferSource(); n.buffer = A.noise;
+  const nf = ctx.createBiquadFilter(); nf.type = 'highpass'; nf.frequency.value = 3200;
+  const ng = ctx.createGain(); env(ng, t, 0.05, 0.001, 0.09);
+  const o = voiceOut(pan, 0.35);
+  osc.connect(f); f.connect(g); g.connect(o.node);
+  n.connect(nf); nf.connect(ng); ng.connect(o.node);
+  osc.start(t); osc.stop(t + 0.6); n.start(t); n.stop(t + 0.12);
+  osc.onended = () => { o.done(); f.disconnect(); g.disconnect(); nf.disconnect(); ng.disconnect(); };
+}
+
+// morph: a detuned chord swept open and closed over the morph duration
+const CHORDS = [[0, 7, 15, 19], [3, 10, 15, 22], [5, 12, 17, 24], [-2, 7, 14, 19]];
+function morphSweep(step) {
+  if (!live()) return;
+  const ctx = A.ctx, t = ctx.currentTime, dur = 1.7;
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 9;
+  f.frequency.setValueAtTime(180, t);
+  f.frequency.exponentialRampToValueAtTime(3200, t + 0.7);
+  f.frequency.exponentialRampToValueAtTime(220, t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.07, t + 0.35);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  const o = voiceOut(0, 0.5);
+  f.connect(g); g.connect(o.node);
+  const oscs = CHORDS[step % CHORDS.length].flatMap(s => [-6, 6].map(cents => {
+    const osc = ctx.createOscillator(); osc.type = 'sawtooth';
+    osc.frequency.value = 110 * Math.pow(2, s / 12); osc.detune.value = cents;
+    osc.connect(f); osc.start(t); osc.stop(t + dur + 0.05); return osc;
+  }));
+  oscs[0].onended = () => { o.done(); f.disconnect(); g.disconnect(); };
+}
+
+// ---------- oscilloscope ----------
+const scope = document.getElementById('scope');
+const sctx = scope.getContext('2d');
+const scopeO = document.getElementById('scope-o');
+let scopeFg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim() || '#e8ecec';
+let scopeGlow = 'rgba(244,246,245,0.7)';
+let scopeGain = 4, scopeLabelT = 0;
+function drawScope(time) {
+  const r = window.devicePixelRatio || 1;
+  const w = Math.round(scope.clientWidth * r), h = Math.round(scope.clientHeight * r);
+  if (scope.width !== w || scope.height !== h) { scope.width = w; scope.height = h; }
+  sctx.clearRect(0, 0, w, h);
+
+  // graticule
+  sctx.strokeStyle = invert ? 'rgba(18,19,19,0.1)' : 'rgba(232,236,236,0.08)';
+  sctx.lineWidth = 1;
+  sctx.beginPath();
+  for (let i = 1; i < 8; i++) { const x = Math.round(w * i / 8) + 0.5; sctx.moveTo(x, 0); sctx.lineTo(x, h); }
+  sctx.moveTo(0, Math.round(h / 2) + 0.5); sctx.lineTo(w, Math.round(h / 2) + 0.5);
+  sctx.stroke();
+
+  const span = 900; // samples shown
+  let buf = null, start = 0, peak = 0, rms = 0;
+  if (A.analyser && A.ctx.state === 'running') {
+    buf = A.scopeBuf;
+    A.analyser.getFloatTimeDomainData(buf);
+    // trigger on a rising zero crossing so the wave holds still
+    for (let i = 1; i < buf.length - span; i++) {
+      if (buf[i - 1] < 0 && buf[i] >= 0) { start = i; break; }
+    }
+    for (let i = 0; i < buf.length; i++) { const v = buf[i]; peak = Math.max(peak, Math.abs(v)); rms += v * v; }
+    rms = Math.sqrt(rms / buf.length);
+  }
+  // auto gain: quiet signals still read, loud ones don't clip
+  const want = Math.min(10, 0.85 / Math.max(peak, 0.04));
+  scopeGain += (want - scopeGain) * 0.08;
+
+  sctx.beginPath();
+  for (let i = 0; i <= span; i += 2) {
+    const x = i / span * w;
+    const v = buf ? buf[start + i] * scopeGain : Math.sin(i * 0.05 + time * 2) * 0.015;
+    const y = h / 2 - Math.max(-1, Math.min(1, v)) * h * 0.46;
+    i === 0 ? sctx.moveTo(x, y) : sctx.lineTo(x, y);
+  }
+  sctx.strokeStyle = scopeFg;
+  sctx.lineWidth = 1.25 * r;
+  sctx.shadowColor = scopeGlow;
+  sctx.shadowBlur = 8 * r;
+  sctx.stroke();
+  sctx.shadowBlur = 0;
+
+  if (scopeO && time - scopeLabelT > 0.1) {
+    scopeLabelT = time;
+    scopeO.textContent = rms > 1e-5 ? (20 * Math.log10(rms)).toFixed(1) + ' dB' : '-∞ dB';
+  }
+}
+
+// prox: 0 at the edges, 1 at the heart of the goo
+function droneFrame(inside, down, prox) {
+  if (!A.ctx) return;
+  const t = A.ctx.currentTime;
+  const sp = Math.min(A.speed / 1500, 1);
+  const pz = inside ? prox : 0;
+  const gain = inside ? 0.018 + sp * 0.07 + pz * 0.035 + (down ? 0.05 : 0) : 0;
+  A.droneGain.gain.setTargetAtTime(gain, t, 0.08);
+  A.droneFilter.frequency.setTargetAtTime(160 + sp * 1800 + pz * 500 + (down ? 900 : 0), t, 0.06);
+  A.droneFilter.Q.setTargetAtTime(7 + pz * 9, t, 0.1);
+  const bend = down ? 1.5 : 1;
+  A.droneOscs[0].frequency.setTargetAtTime(55 * bend, t, 0.25);
+  A.droneOscs[1].frequency.setTargetAtTime(55.35 * bend, t, 0.3);
+  A.droneOscs[2].frequency.setTargetAtTime(110 * bend, t, 0.2);
+  // wobble speeds up and deepens toward the centre
+  A.lfo.frequency.setTargetAtTime(0.5 + pz * pz * 8.5, t, 0.15);
+  A.lfoCut.gain.setTargetAtTime(pz * 1100, t, 0.1);
+  A.lfoPitch.gain.setTargetAtTime(pz * 35, t, 0.1);
+  A.growl.frequency.setTargetAtTime(55 * 1.5 * bend, t, 0.25);
+  A.growlGain.gain.setTargetAtTime(pz * pz * 70 * bend, t, 0.12);
+}
+
+// ---------- composition (world units, y down, origin = centre) ----------
+// layer 0 = white goo core, 1 = dark shell w/ outline, 2 = standalone pills
+const nodes = [];
+function add(layer, ax, ay, bx, by, r, hole, flag) {
+  nodes.push({ layer, rax: ax, ray: ay, rox: bx - ax, roy: by - ay, r, hole, flag,
+    x: ax, y: ay, vx: 0, vy: 0, ph: Math.random() * 6.283, s: 1, vis: true, pri: 0,
+    w: layer === 0 ? 1 : layer === 1 ? 0.5 : 0.75 });
+}
+const C  = (x, y, r, hole = 0, dot = 0) => add(0, x, y, x, y, r, hole, dot);
+const CC = (x1, y1, x2, y2, r) => add(0, x1, y1, x2, y2, r, 0, 0);
+const S  = (x, y, r, flag = 1) => add(1, x, y, x, y, r, 0, flag);
+const SC = (x1, y1, x2, y2, r, flag = 0) => add(1, x1, y1, x2, y2, r, 0, flag);
+const P  = (x1, y1, x2, y2, r, slot = 0, filled = 0) => add(2, x1, y1, x2, y2, r, slot, filled);
+
+// core spine
+C(0, -95, 46, 24, 0.32);
+C(0, 40, 46, 24, 0.32);
+C(0, -215, 24, -7);
+C(0, 172, 30, -6);
+for (const s of [-1, 1]) {
+  C(62 * s, -168, 34);
+  C(64 * s, -28, 31, s < 0 ? 15 : 0, 0.4);
+  C(64 * s, 105, 32, s > 0 ? 14 : 0, 0.42);
+  C(118 * s, -95, 29);
+  C(122 * s, 40, 30, s > 0 ? 13 : 0, 0.0);
+  C(58 * s, 182, 24);
+  C(150 * s, -25, 15, -6);
+  C(186 * s, -25, 13, -5);
+}
+C(-118, -140, 15);                       // lonely dot
+C(152, -225, 14); CC(118, -192, 152, -225, 9); // diagonal dumbbell
+C(70, 222, 13); C(70, 246, 13);          // little peanut
+C(0, 262, 24, -6); CC(0, 262, 0, 305, 12); C(0, 345, 36, 26, 0); // bottom pendant ring
+C(-60, -335, 26, 12, 0.45); CC(-60, -335, -52, -285, 10);     // top pin
+C(0, -268, 16, -6);
+
+// dark shell bubbles
+for (const y of [-260, -143, -25, 93]) S(-225, y, 56, y === -143 ? 2 : y === 93 ? 3 : 1);
+for (const y of [-25, 93]) S(247, y, 54, y === 93 ? 2 : 1);
+S(247, 325, 52, 2);
+S(129, -262, 40, 1);
+S(-48, -262, 34, 0);
+S(-348, 215, 46, 0);
+S(12, 450, 54, 1);
+S(292, -88, 46, 1);
+SC(292, -88, 410, -70, 26, 0);
+S(190, -330, 46, 0);
+S(-120, 300, 40, 0);
+S(140, 270, 44, 1);
+
+// standalone pills + lines
+P(188, -420, 188, -322, 22, 5, 0);
+P(-170, 195, -170, 285, 27, 9, 1);
+
+// extra mirrored pairs that fade in when the count goes above the base composition
+const BASE = nodes.length;
+for (const n of nodes) n.pri = Math.hypot(n.rax, n.ray) - (n.layer === 0 ? 120 : 0);
+let seed = 7;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+for (let i = 0; nodes.length < N; i++) {
+  const ang = rnd() * Math.PI - Math.PI / 2;
+  const rad = 110 + rnd() * 330;
+  const x = Math.max(30, Math.cos(ang) * rad * 0.85), y = Math.sin(ang) * rad * 1.1;
+  const isCore = rnd() < 0.6;
+  const r = isCore ? 11 + rnd() * 15 : 28 + rnd() * 22;
+  const hole = isCore && rnd() < 0.35 ? -(3 + rnd() * 3) : 0;
+  const flag = isCore ? 0 : [0, 1, 1, 2, 3][Math.floor(rnd() * 5)];
+  for (const s of [-1, 1]) {
+    if (nodes.length >= N) break;
+    add(isCore ? 0 : 1, x * s, y, x * s, y, r, hole, flag);
+    const n = nodes[nodes.length - 1];
+    n.pri = 10000 + i * 10; n.s = 0; n.vis = false;
+  }
+}
+// lowest priority first: outer decoration goes before the central goo
+const ranked = [...nodes].sort((a, b) => a.pri - b.pri);
+function setCount(c) { ranked.forEach((n, i) => { n.vis = i < c; }); }
+setCount(BASE);
+
+// ---------- layouts to morph between ----------
+const layouts = [
+  n => ({ x: n.rax, y: n.ray, a: 0 }),
+  n => { // bloom: core spreads, shell pulls in
+    const f = n.layer === 0 ? 1.38 : n.layer === 1 ? 0.82 : 1.1;
+    return { x: n.rax * f, y: n.ray * (n.layer === 0 ? 1.08 : 0.9), a: 0 };
+  },
+  n => { // twist: rotate more near centre
+    const r = Math.hypot(n.rax, n.ray);
+    const a = 1.1 * Math.max(0, 1 - r / 520);
+    const c = Math.cos(a), s = Math.sin(a);
+    return { x: n.rax * c - n.ray * s, y: n.rax * s + n.ray * c, a };
+  },
+  n => { // squeeze: tall + narrow
+    return { x: n.rax * 0.62, y: n.ray * 1.18 + (n.layer === 1 ? Math.sign(n.rax) * 20 : 0), a: 0 };
+  },
+];
+let from = 0, to = 0, morphT = 1;
+
+// plus marks: thin registration crosses scattered through the field
+const pluses = [];
+{
+  let s2 = 99;
+  const r2 = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+  // style bits: 1 = white fill, 2 = white stroke, 4..12 = stroke weight; black-on-black is never picked
+  const style = () => {
+    const white = r2() < 0.5;
+    const strokeWhite = white ? r2() < 0.35 : true;
+    return (white ? 1 : 0) + (strokeWhite ? 2 : 0) + Math.floor(r2() * 4) * 4;
+  };
+  for (let i = 0; i < PN; i++) {
+    const x = (r2() * 2 - 1) * 430, y = (r2() * 2 - 1) * 470;
+    pluses.push({ rax: x, ray: y, layer: 1, x, y, vx: 0, vy: 0, size: 8 + r2() * 9, st: style(),
+      rot: 0, vr: 0, s: 0, vis: false, ph: r2() * 6.283, touch: false, lastT: 0, shockId: 0,
+      w: 0.6, freq: noteFreq(Math.round((450 - y) / 900 * 12) + 5) });
+  }
+}
+function setPlusCount(c) { pluses.forEach((q, i) => { q.vis = i < c; }); }
+setPlusCount(8);
+
+// ---------- sections + floating labels ----------
+// Each label names a spot in the composition; it attaches to the nearest blob there.
+// Edit text / positions here.
+const SECTIONS = [
+  { name: 'Intro', title: 'A field that listens', labels: [['Scroll', 0, 262]] },
+  { name: 'Work', title: 'Selected work', labels: [['Motion', -62, -168], ['3D', 118, -95], ['Sound', -122, 40], ['Systems', 64, 105]] },
+  { name: 'About', title: 'How it’s made', labels: [['Studio', -225, -25], ['Process', 247, -25], ['Tools', -64, 105]] },
+  { name: 'Contact', title: 'Say hello', labels: [['Email', 62, -168], ['Instagram', -225, 93], ['Say hi', 0, 345]] },
+];
+// hover colours for the nav, in order: copper, yellow, green, cyan, lilac
+const NAV_COLORS = [[213, 143, 101], [229, 218, 73], [116, 210, 141], [121, 212, 236], [185, 157, 227]];
+const tint = { r: 1, g: 1, b: 1, amt: 0, target: null };
+const anchorPool = nodes.slice(0, BASE).filter(n => n.layer < 2);
+const nearest = (x, y, pool) => pool.reduce((b, n) => {
+  const d = Math.hypot(n.rax - x, n.ray - y);
+  return d < b.d ? { n, d } : b;
+}, { n: null, d: Infinity }).n;
+const labelsEl = document.getElementById('labels');
+const sectionsEl = document.getElementById('sections');
+const secnav = document.getElementById('secnav');
+const labels = [];
+const navBtns = [];
+SECTIONS.forEach((sec, si) => {
+  const s = document.createElement('section');
+  s.innerHTML = `<h2 class="sr">${sec.title}</h2>`;
+  sectionsEl.appendChild(s);
+  const b = document.createElement('button');
+  b.textContent = sec.name;
+  b.addEventListener('click', () => scrollTo({ top: si * innerHeight, behavior: reduce ? 'auto' : 'smooth' }));
+  secnav.appendChild(b); navBtns.push(b);
+  const c = NAV_COLORS[si % NAV_COLORS.length];
+  b.style.setProperty('--c', `rgb(${c.join(',')})`);
+  const on = () => { tint.target = c; tick(noteFreq(10 + si * 2), 0.8, 0.035); };
+  const off = () => { if (tint.target === c) tint.target = null; };
+  b.addEventListener('pointerenter', on); b.addEventListener('pointerleave', off);
+  b.addEventListener('focus', on); b.addEventListener('blur', off);
+  for (const [text, x, y] of sec.labels) {
+    const node = nearest(x, y, anchorPool);
+    const twin = nearest(-node.rax, node.ray, anchorPool.filter(n => n.layer === node.layer));
+    const el = document.createElement('span');
+    el.className = 'label ' + (node.layer === 0 ? 'on-core' : 'on-shell');
+    el.textContent = text;
+    labelsEl.appendChild(el);
+    labels.push({ el, node, twin, si, a: 0 });
+  }
+});
+const secEl = document.getElementById('sec');
+const secName = document.getElementById('sec-name'), secTitle = document.getElementById('sec-title');
+let section = -1;
+function setSection(i) {
+  if (i === section) return;
+  const first = section < 0;
+  section = i;
+  secName.textContent = SECTIONS[i].name;
+  secTitle.textContent = SECTIONS[i].title;
+  secEl.classList.remove('in'); void secEl.offsetWidth; secEl.classList.add('in');
+  navBtns.forEach((b, j) => b.setAttribute('aria-current', String(j === i)));
+  // each section has its own arrangement of the field
+  if (!first) { from = to; to = i % layouts.length; morphT = 0; morphSweep(to); }
+}
+setSection(0);
+// higher on screen = higher note
+for (const n of nodes) { n.freq = noteFreq(Math.round((450 - n.ray) / 900 * 12)); n.touch = false; n.lastT = 0; n.shockId = 0; }
+
+// ---------- shader ----------
+const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }`;
+const fs = `
+precision highp float;
+#define N ${N}
+uniform vec2 uRes; uniform float uScale; uniform float uTime;
+uniform vec4 uA[N]; uniform vec4 uB[N]; uniform int uCount;
+uniform vec3 uMouse; uniform vec4 uShock; uniform float uK; uniform float uGlow;
+uniform float uContours; uniform float uSpacing; uniform float uFlash; uniform float uMirror;
+uniform vec3 uTint; uniform float uTintAmt; uniform float uInvert;
+uniform sampler2D uRD; uniform float uRDAmt;
+#define PN ${PN}
+uniform vec4 uPl[PN]; uniform int uPlCount;
+
+float sdSeg(vec2 p, vec2 a, vec2 b, float r){
+  vec2 pa = p - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-4), 0., 1.);
+  return length(pa - ba * h) - r;
+}
+float smin(float a, float b, float k){
+  float h = max(k - abs(a - b), 0.) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float sdBox(vec2 p, vec2 b){ vec2 d = abs(p) - b; return length(max(d, 0.)) + min(max(d.x, d.y), 0.); }
+// chunky rounded plus; z packs size (0-63) + 64 * style bits (fill, stroke colour, weight)
+float plusSD(vec4 Q, vec2 p, out float st){
+  st = floor(Q.z / 64.);
+  float sz = Q.z - st * 64.;
+  vec2 q = p - Q.xy;
+  float c = cos(Q.w), s = sin(Q.w);
+  q = vec2(c * q.x + s * q.y, -s * q.x + c * q.y);
+  float arm = sz * 0.34, r = arm * 0.4;
+  return min(sdBox(q, vec2(sz, arm) - r), sdBox(q, vec2(arm, sz) - r)) - r;
+}
+
+vec3 scene(vec2 p){
+  vec2 pr = p; // unmirrored, so the cursor blob only shows where the cursor is
+  if (uMirror > 0.5) p.x = -abs(p.x); // left half reflected onto the right
+  float px = 1. / uScale;
+  float aa = px * 1.1;
+
+  // shockwave locally boosts gooeyness
+  float sk = 0.;
+  float shockLine = 0.;
+  if (uShock.w > 0.001) {
+    float dd = length(p - uShock.xy) - uShock.z;
+    sk = uShock.w * exp(-dd * dd / 5000.);
+    shockLine = uShock.w * (1. - smoothstep(0., px * 1.5, abs(dd)));
+  }
+  float k = uK * (1. + sk * 2.5);
+
+  float core = 1e5, shell = 1e5, holes = 1e5, dots = 1e5, dim = 1e5, rings = 1e5;
+  float pillO = 1e5, pillF = 1e5, slotW = 1e5, slotD = 1e5;
+
+  for (int i = 0; i < N; i++) {
+    if (i >= uCount) break;
+    vec4 A = uA[i], B = uB[i];
+    float d = sdSeg(p, A.xy, B.xy, A.z);
+    float lc = length(p - A.xy);
+    if (B.w < 0.5) {
+      core = smin(core, d, k);
+      shell = smin(shell, d - A.z * 0.3 - 16., k * 2.2);
+      if (B.z > 0.) { holes = min(holes, lc - B.z); if (A.w > 0.) dots = min(dots, lc - B.z * A.w); }
+      else if (B.z < 0.) holes = min(holes, lc + B.z);
+    } else if (B.w < 1.5) {
+      shell = smin(shell, d, k * 2.2);
+      if (A.w > 0.5 && A.w < 1.5) dots = min(dots, lc - 3.5);
+      else if (A.w > 1.5 && A.w < 2.5) dim = min(dim, lc - A.z * 0.42);
+      else if (A.w > 2.5) { rings = min(rings, abs(lc - A.z * 0.42) - 1.2); dots = min(dots, lc - A.z * 0.2); }
+    } else {
+      if (A.w > 0.5) { pillF = min(pillF, d); if (B.z > 0.) slotD = min(slotD, sdSeg(p, A.xy, B.xy, B.z)); }
+      else { pillO = min(pillO, d); if (B.z > 0.) slotW = min(slotW, sdSeg(p, A.xy, B.xy, B.z)); }
+    }
+  }
+  if (uMouse.z > 0.5) {
+    float dm = length(pr - uMouse.xy) - uMouse.z;
+    core = smin(core, dm, k * 1.2);
+    shell = smin(shell, dm - 22., k * 2.2);
+  }
+  float coreCut = max(core, -holes);
+
+  vec3 col = vec3(0.071, 0.075, 0.075);
+  // vignette lift toward centre
+  col += 0.025 * exp(-dot(p, p) / 160000.);
+
+  // reaction-diffusion field behind everything (shell fills cover it)
+  if (uRDAmt > 0.001) {
+    vec2 suv = vec2((p.x * uScale + uRes.x * 0.5) / uRes.x, 1. - (p.y * uScale + uRes.y * 0.5) / uRes.y);
+    float rdm = smoothstep(0.18, 0.22, texture2D(uRD, suv).g);
+    col = mix(col, vec3(0.16, 0.165, 0.165), rdm * uRDAmt);
+  }
+
+  // orbit lines behind everything
+  vec2 oc = p - vec2(20., 10.);
+  float ol = length(oc);
+  float orbit = 0.;
+  for (int j = 0; j < 3; j++) {
+    float r = 300. + float(j) * 34.;
+    orbit = max(orbit, 1. - smoothstep(0., px * 1.2, abs(ol - r)));
+  }
+  col = mix(col, vec3(0.5), orbit * 0.22);
+
+  // shell: dark fill + thin outline
+  float sf = 1. - smoothstep(-aa, aa, shell);
+  col = mix(col, vec3(0.098, 0.102, 0.104), sf);
+  col = mix(col, vec3(0.30), (1. - smoothstep(-aa, aa, dim)) * sf);
+  float so = 1. - smoothstep(0., px * 1.3, abs(shell) - px * 0.3);
+  col = mix(col, vec3(0.78), so * 0.7);
+
+  // topographic contours: iso-lines of the shell field stepping outward
+  for (int j = 0; j < 16; j++) {
+    if (float(j) >= uContours) break;
+    float off = float(j + 1) * uSpacing;
+    float cl = 1. - smoothstep(0., px * 1.2, abs(shell - off) - px * 0.25);
+    col = mix(col, vec3(0.72), cl * 0.5 * (1. - float(j) / (uContours + 1.)));
+  }
+
+  // white-filled pluses feed the glow
+  float pmW = 1e5, stTmp;
+  for (int i = 0; i < PN; i++) {
+    if (i >= uPlCount) break;
+    float d = plusSD(uPl[i], p, stTmp);
+    if (mod(stTmp, 2.) > 0.5) pmW = min(pmW, d);
+  }
+  col = mix(col, vec3(0.85), (1. - smoothstep(-aa, aa, rings)) * 0.85);
+
+  // shockwave ring
+  col = mix(col, vec3(0.9), shockLine * 0.35);
+
+  // glow from bright things
+  float gd = min(coreCut, min(min(pillF, slotW), pmW));
+  gd = max(gd, 0.);
+  col += uGlow * (0.22 * exp(-gd / 70.) + 0.18 * exp(-gd / 14.)) * vec3(0.95, 0.97, 0.97);
+
+  // outlined pills
+  float po = 1. - smoothstep(-aa, aa, pillO);
+  col = mix(col, vec3(0.085), po);
+  col = mix(col, vec3(0.92), (1. - smoothstep(0., px * 1.4, abs(pillO) - px * 0.5)));
+  col = mix(col, vec3(0.94), 1. - smoothstep(-aa, aa, slotW));
+
+  // chunky pluses: black or white fill, black or white inner stroke, 1-4px
+  for (int i = 0; i < PN; i++) {
+    if (i >= uPlCount) break;
+    float st;
+    float d = plusSD(uPl[i], p, st);
+    float fillW = mod(st, 2.), strokeW = mod(floor(st / 2.), 2.), wt = floor(st / 4.) + 1.;
+    col = mix(col, fillW > 0.5 ? vec3(0.94) : vec3(0.085), 1. - smoothstep(-aa, aa, d));
+    float sw = wt * px * 1.3;
+    col = mix(col, strokeW > 0.5 ? vec3(0.92) : vec3(0.05), 1. - smoothstep(0., aa, abs(d + sw * 0.5) - sw * 0.5));
+  }
+
+  // core goo
+  float cf = 1. - smoothstep(-aa, aa, coreCut);
+  float shade = 0.9 + 0.06 * smoothstep(0., -40., core);
+  col = mix(col, vec3(shade, shade + 0.01, shade + 0.01), cf);
+  // faint rim inside holes
+  float hr = (1. - smoothstep(0., px * 1.2, abs(holes) - px * 0.3)) * (1. - smoothstep(-aa, aa, core));
+  col = mix(col, vec3(0.6), hr * 0.5);
+
+  // filled pills
+  col = mix(col, vec3(0.94), 1. - smoothstep(-aa, aa, pillF));
+  col = mix(col, vec3(0.085), 1. - smoothstep(-aa, aa, slotD));
+
+  // dots
+  col = mix(col, vec3(0.95), 1. - smoothstep(-aa, aa, dots));
+
+  return col;
+}
+
+// click palette: copper, yellow, green, cyan, lilac
+vec3 pal(float i){
+  if (i < 0.5) return vec3(213., 143., 101.) / 255.;
+  if (i < 1.5) return vec3(229., 218., 73.) / 255.;
+  if (i < 2.5) return vec3(116., 210., 141.) / 255.;
+  if (i < 3.5) return vec3(121., 212., 236.) / 255.;
+  return vec3(185., 157., 227.) / 255.;
+}
+vec3 palCycle(float t){
+  float f = mod(t, 5.);
+  float i = floor(f);
+  return mix(pal(i), pal(mod(i + 1., 5.)), smoothstep(0., 1., f - i));
+}
+
+void main(){
+  vec2 fc = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec2 p = (fc - uRes * 0.5) / uScale;
+  vec2 pf = p;
+  if (uMirror > 0.5) pf.x = -abs(pf.x);
+  vec3 col;
+  if (uFlash > 0.01) {
+    // chromatic split: five palette taps fanned out radially from the click
+    vec2 dir = pf - uShock.xy;
+    dir = dir / max(length(dir), 1.);
+    dir = normalize(dir + vec2(0.35, 0.));
+    if (uMirror > 0.5 && p.x > 0.) dir.x = -dir.x;
+    float amt = uFlash * 16.;
+    vec3 acc = vec3(0.), wsum = vec3(0.);
+    for (int i = 0; i < 5; i++) {
+      float t = (float(i) - 2.) * 0.5;
+      vec3 c = pal(float(i));
+      float l = dot(scene(p + dir * amt * t), vec3(0.3333));
+      acc += c * l; wsum += c;
+    }
+    col = acc / wsum;
+    // whole field tints through the palette as the flash decays
+    vec3 cyc = palCycle((1. - uFlash) * 5. + length(p) / 400.);
+    col = mix(col, col * cyc * 1.35, uFlash * 0.55);
+  } else {
+    col = scene(p);
+  }
+  // nav hover tint: whites take the colour, darks stay dark
+  col = mix(col, 1. - col, uInvert);
+  col = mix(col, col * uTint * 1.08, uTintAmt);
+  // grain
+  col += (hash(fc + fract(uTime) * 100.) - 0.5) * 0.035;
+  gl_FragColor = vec4(col, 1.);
+}`;
+
+function sh(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'p');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+const U = {};
+for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uPl', 'uPlCount', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt'])
+  U[n] = gl.getUniformLocation(prog, n);
+const arrA = new Float32Array(N * 4), arrB = new Float32Array(N * 4);
+const arrP = new Float32Array(PN * 4);
+
+// ---------- sizing ----------
+let W = 0, H = 0, dpr = 1, scale = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  W = Math.round(canvas.clientWidth * dpr);
+  H = Math.round(canvas.clientHeight * dpr);
+  canvas.width = W; canvas.height = H;
+  gl.viewport(0, 0, W, H);
+  scale = Math.min(W / 980, H / 1060);
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- reaction-diffusion (port of commms src/three/background.ts) ----------
+// Gray-Scott "coral growth": ping-pong float textures, low-res grid, cursor erase
+// brush, spontaneous reseeds. Clicks plant a bloom where the pulse fires.
+const rd = (() => {
+  const SIM_MAX = 512, STEPS = 6, BURN_IN = 300, FEED = 0.0545, KILL = 0.062;
+  const BRUSH = 16, RESEED_R = 5;
+  const hf = gl.getExtension('OES_texture_half_float');
+  const hfLin = gl.getExtension('OES_texture_half_float_linear');
+  gl.getExtension('EXT_color_buffer_half_float');
+  const fl = gl.getExtension('OES_texture_float');
+  const flLin = gl.getExtension('OES_texture_float_linear');
+  gl.getExtension('WEBGL_color_buffer_float');
+  const candidates = [];
+  if (hf) candidates.push([hf.HALF_FLOAT_OES, !!hfLin]);
+  if (fl) candidates.push([gl.FLOAT, !!flLin]);
+
+  const VS = `attribute vec2 p; varying vec2 vUv; void main(){ vUv = p * 0.5 + 0.5; gl_Position = vec4(p, 0., 1.); }`;
+  const INIT = `precision highp float; varying vec2 vUv; uniform vec2 uSimDims; uniform float uSeed;
+  float h(vec2 q){ return fract(sin(dot(q, vec2(12.9898, 78.233)) + uSeed) * 43758.5453); }
+  void main(){ vec2 cell = floor(vUv * uSimDims / 7.); gl_FragColor = vec4(1., step(0.988, h(cell)), 0., 1.); }`;
+  const SIM = `precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uState; uniform vec2 uTexel; uniform float uFeed; uniform float uKill;
+  uniform vec2 uMouse; uniform vec2 uSimDims; uniform float uBrushR; uniform vec2 uSeedPos; uniform float uSeedR;
+  void main(){
+    vec2 uv = vUv;
+    vec2 c = texture2D(uState, uv).rg;
+    vec2 lap = -c;
+    lap += 0.2 * texture2D(uState, uv + vec2(uTexel.x, 0.)).rg;
+    lap += 0.2 * texture2D(uState, uv - vec2(uTexel.x, 0.)).rg;
+    lap += 0.2 * texture2D(uState, uv + vec2(0., uTexel.y)).rg;
+    lap += 0.2 * texture2D(uState, uv - vec2(0., uTexel.y)).rg;
+    lap += 0.05 * texture2D(uState, uv + uTexel).rg;
+    lap += 0.05 * texture2D(uState, uv - uTexel).rg;
+    lap += 0.05 * texture2D(uState, uv + vec2(uTexel.x, -uTexel.y)).rg;
+    lap += 0.05 * texture2D(uState, uv + vec2(-uTexel.x, uTexel.y)).rg;
+    float A = c.r, B = c.g;
+    float reaction = A * B * B;
+    float nextA = A + (1.0 * lap.r - reaction + uFeed * (1.0 - A));
+    float nextB = B + (0.5 * lap.g + reaction - (uKill + uFeed) * B);
+    float d = length((vUv - uMouse) * uSimDims);
+    nextB = mix(nextB, 0.0, 1.0 - smoothstep(uBrushR * 0.4, uBrushR, d));
+    float ds = length((vUv - uSeedPos) * uSimDims);
+    nextB = max(nextB, (1.0 - smoothstep(uSeedR * 0.3, uSeedR, ds)) * 0.9);
+    gl_FragColor = vec4(clamp(nextA, 0., 1.), clamp(nextB, 0., 1.), 0., 1.);
+  }`;
+  const mk = (fsrc) => {
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fsrc));
+    gl.bindAttribLocation(pr, 0, 'p');
+    gl.linkProgram(pr);
+    const u = {};
+    for (const n of ['uState', 'uTexel', 'uFeed', 'uKill', 'uMouse', 'uSimDims', 'uBrushR', 'uSeedPos', 'uSeedR', 'uSeed'])
+      u[n] = gl.getUniformLocation(pr, n);
+    return { pr, u };
+  };
+  let simP, initP;
+  try { simP = mk(SIM); initP = mk(INIT); } catch (e) { console.warn('RD disabled:', e); return null; }
+
+  let type = 0, linear = false, w = 0, h = 0, read = null, write = null;
+  const target = (tw, th, ty, lin) => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    const f = lin ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, tw, th, 0, gl.RGBA, ty, null);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { t, fb, ok };
+  };
+  const free = (x) => { if (x) { gl.deleteTexture(x.t); gl.deleteFramebuffer(x.fb); } };
+  const draw = () => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const seedPos = [-10, -10];
+  let seedR = RESEED_R;
+  const step = (mouseUv) => {
+    gl.useProgram(simP.pr);
+    gl.uniform2f(simP.u.uTexel, 1 / w, 1 / h);
+    gl.uniform1f(simP.u.uFeed, FEED);
+    gl.uniform1f(simP.u.uKill, KILL);
+    gl.uniform2f(simP.u.uSimDims, w, h);
+    gl.uniform1f(simP.u.uBrushR, BRUSH);
+    gl.uniform1f(simP.u.uSeedR, seedR);
+    gl.uniform2f(simP.u.uMouse, mouseUv[0], mouseUv[1]);
+    gl.uniform2f(simP.u.uSeedPos, seedPos[0], seedPos[1]);
+    gl.uniform1i(simP.u.uState, 0);
+    gl.viewport(0, 0, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, write.fb);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, read.t);
+    draw();
+    const s = read; read = write; write = s;
+    seedPos[0] = seedPos[1] = -10; // a seed is active for one step only
+    seedR = RESEED_R;
+  };
+  const build = () => {
+    const aspect = W / H;
+    const nw = aspect >= 1 ? SIM_MAX : Math.round(SIM_MAX * aspect);
+    const nh = aspect >= 1 ? Math.round(SIM_MAX / aspect) : SIM_MAX;
+    if (nw === w && nh === h && read) return true;
+    free(read); free(write); read = write = null;
+    for (const [ty, lin] of candidates) {
+      const a = target(nw, nh, ty, lin), b = target(nw, nh, ty, lin);
+      if (a.ok && b.ok) { read = a; write = b; type = ty; linear = lin; break; }
+      free(a); free(b);
+    }
+    if (!read) return false;
+    w = nw; h = nh;
+    gl.useProgram(initP.pr);
+    gl.uniform2f(initP.u.uSimDims, w, h);
+    gl.uniform1f(initP.u.uSeed, Math.random() * 100);
+    gl.viewport(0, 0, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, read.fb);
+    draw();
+    for (let i = 0; i < BURN_IN; i++) step([-10, -10]);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return true;
+  };
+  if (!candidates.length || !build()) { console.warn('RD disabled: no renderable float textures'); return null; }
+
+  let clock = 0, nextSeed = 4 + Math.random() * 2;
+  return {
+    tex: () => read.t,
+    rebuild: build,
+    splat(u, v, r) { seedPos[0] = u; seedPos[1] = v; seedR = r; },
+    update(dt, mouseUv) {
+      if (reduce) return;
+      clock += dt;
+      if (clock >= nextSeed) { seedPos[0] = Math.random(); seedPos[1] = Math.random(); nextSeed = clock + 4 + Math.random() * 2; }
+      for (let i = 0; i < STEPS; i++) step(mouseUv);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    },
+  };
+})();
+let rdTimer = 0;
+addEventListener('resize', () => { clearTimeout(rdTimer); rdTimer = setTimeout(() => rd && rd.rebuild(), 150); });
+// world (y down) -> sim uv (y up)
+const worldToUv = (x, y) => [(x * scale + W / 2) / W, 1 - (y * scale + H / 2) / H];
+
+// ---------- controls ----------
+const P_ = { mode: 'attract', k: 36, glow: 1, stiff: 70, csize: 30, force: 1, contours: 3, spacing: 18, rd: 0.7 };
+const bind = (id, key, fmt, map = v => v) => {
+  const el = document.getElementById(id), out = document.getElementById(id + '-o');
+  const set = () => { P_[key] = map(+el.value); out.textContent = fmt(P_[key]); };
+  el.addEventListener('input', set); set();
+};
+bind('k', 'k', v => v.toFixed(0));
+bind('glow', 'glow', v => v.toFixed(1), v => v / 100);
+bind('contours', 'contours', v => v.toFixed(0));
+bind('rd', 'rd', v => Math.round(v * 100) + '%', v => v / 100);
+bind('spacing', 'spacing', v => v.toFixed(0));
+bind('stiff', 'stiff', v => v.toFixed(0));
+bind('csize', 'csize', v => v.toFixed(0));
+bind('force', 'force', v => v.toFixed(1), v => v / 100);
+for (const m of ['attract', 'repel', 'blob']) {
+  document.getElementById('m-' + m).addEventListener('click', () => {
+    P_.mode = m;
+    for (const o of ['attract', 'repel', 'blob'])
+      document.getElementById('m-' + o).setAttribute('aria-pressed', String(o === m));
+  });
+}
+const morphClick = document.getElementById('morphclick');
+const invertBtn = document.getElementById('invert');
+let invert = false, invAmt = 0;
+function setInvert(on) {
+  invert = on;
+  document.documentElement.classList.toggle('inv', on);
+  invertBtn.setAttribute('aria-pressed', String(on));
+  scopeFg = getComputedStyle(document.documentElement).getPropertyValue('--fg').trim();
+  scopeGlow = on ? 'rgba(18,19,19,0.35)' : 'rgba(244,246,245,0.7)';
+  tick(noteFreq(on ? 3 : 6), 0, 0.05, 'square', 0.06);
+}
+invertBtn.addEventListener('click', () => setInvert(!invert));
+addEventListener('keydown', e => {
+  if ((e.key === 'i' || e.key === 'I') && !(e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && e.target.type !== 'range')) setInvert(!invert);
+});
+// Mirror: only the left half is simulated and drawn; the cursor is folded onto it,
+// so working either side of the screen pushes the same shapes and both halves match.
+const mirrorEl = document.getElementById('mirror');
+let mirror = false;
+function setMirror(on) {
+  mirror = on; mirrorEl.checked = on;
+  mouse.tx = on ? -Math.abs(mouse.rawX) : mouse.rawX;
+  tick(noteFreq(on ? 12 : 9), 0, 0.05, 'square', 0.06);
+}
+mirrorEl.addEventListener('change', () => setMirror(mirrorEl.checked));
+addEventListener('keydown', e => {
+  if ((e.key === 'm' || e.key === 'M') && !(e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && e.target.type !== 'range')) setMirror(!mirror);
+});
+// pan follows the side of the screen the cursor is actually on
+const panOf = x => mirror ? Math.sign(mouse.rawX || 1) * Math.abs(x) / 450 : x / 450;
+const countEl = document.getElementById('count'), countO = document.getElementById('count-o');
+countEl.max = String(nodes.length);
+countEl.value = String(BASE); countO.textContent = BASE;
+let lastCount = BASE;
+const plusEl = document.getElementById('plus'), plusO = document.getElementById('plus-o');
+plusEl.addEventListener('input', () => {
+  setPlusCount(+plusEl.value); plusO.textContent = plusEl.value;
+  tick(noteFreq(+plusEl.value + 8), 0, 0.04, 'square', 0.05);
+});
+countEl.addEventListener('input', () => {
+  const c = +countEl.value;
+  setCount(c); countO.textContent = c;
+  if (c !== lastCount) tick(noteFreq(Math.round(c / 6)), 0, 0.05);
+  lastCount = c;
+});
+function morph() {
+  from = to; to = (to + 1) % layouts.length; morphT = 0;
+  morphSweep(to);
+}
+const vol = document.getElementById('vol'), volO = document.getElementById('vol-o');
+vol.addEventListener('input', () => {
+  A.vol = +vol.value / 100; volO.textContent = vol.value;
+  if (A.ctx && A.on) A.master.gain.setTargetAtTime(A.vol, A.ctx.currentTime, 0.05);
+});
+const soundBtn = document.getElementById('sound');
+soundBtn.addEventListener('click', () => {
+  if (!A.ctx) { audioInit(); return; }
+  A.ctx.resume();
+  A.on = !A.on;
+  A.master.gain.setTargetAtTime(A.on ? A.vol : 0, A.ctx.currentTime, 0.05);
+  soundBtn.setAttribute('aria-pressed', String(A.on));
+  soundBtn.textContent = A.on ? 'Sound on' : 'Sound off';
+});
+document.getElementById('morph').addEventListener('click', () => { audioInit(); morph(); });
+document.getElementById('reset').addEventListener('click', () => { from = to; to = 0; morphT = 0; });
+addEventListener('keydown', e => {
+  if (e.code === 'Space' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) {
+    e.preventDefault(); morph();
+  }
+});
+
+// ---------- pointer ----------
+const mouse = { x: 0, y: 0, tx: 0, ty: 0, r: 0, inside: false, down: false, px: 0, py: 0, rawX: 0, ux: 0 };
+const shock = { x: 0, y: 0, age: 99, id: 0 };
+let flash = 0;
+function toWorld(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) * dpr - W / 2) / scale;
+  mouse.rawX = x;
+  return [mirror ? -Math.abs(x) : x, ((e.clientY - rect.top) * dpr - H / 2) / scale];
+}
+canvas.addEventListener('pointermove', e => {
+  [mouse.tx, mouse.ty] = toWorld(e);
+  if (!mouse.inside) { mouse.x = mouse.tx; mouse.y = mouse.ty; }
+  mouse.inside = true;
+});
+canvas.addEventListener('pointerleave', () => { mouse.inside = false; mouse.down = false; });
+canvas.addEventListener('pointerdown', e => {
+  [mouse.tx, mouse.ty] = toWorld(e);
+  if (!mouse.inside) { mouse.x = mouse.tx; mouse.y = mouse.ty; }
+  mouse.inside = true; mouse.down = true;
+  audioInit();
+  const pan = mouse.rawX / 450;
+  const pitch = Math.round((mouse.tx + 450) / 900 * 10);
+  pluck(noteFreq(pitch), pan, 0.6 + Math.max(0, -mouse.ty) / 300, 0.26, 1.5);
+  zap(pan);
+  if (!reduce) { shock.x = mouse.tx; shock.y = mouse.ty; shock.age = 0; shock.id++; }
+  if (rd) { const [u, v] = worldToUv(mouse.tx, mouse.ty); rd.splat(u, v, 12); }
+  else { shock.x = mouse.tx; shock.y = mouse.ty; }
+  flash = reduce ? 0.35 : 1;
+  if (morphClick.checked) morph();
+});
+addEventListener('pointerup', () => { mouse.down = false; });
+
+// ---------- sim ----------
+const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+let last = performance.now(), time = 0;
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 1 / 30); last = now; time += dt;
+  setSection(Math.max(0, Math.min(SECTIONS.length - 1, Math.round(scrollY / innerHeight))));
+  morphT = Math.min(1, morphT + dt / 1.4);
+  const m = ease(morphT);
+  shock.age += dt;
+  flash *= Math.exp(-dt * 3.2);
+  const shockR = shock.age * 620, shockAmp = Math.exp(-shock.age * 1.6);
+
+  // cursor blob follows with lag so it drags the goo
+  const follow = 1 - Math.exp(-dt * 14);
+  mouse.x += (mouse.tx - mouse.x) * follow;
+  mouse.y += (mouse.ty - mouse.y) * follow;
+  mouse.ux += (mouse.rawX - mouse.ux) * follow;
+  const targetR = mouse.inside ? P_.csize * (mouse.down ? 1.8 : 1) : 0;
+  mouse.r += (targetR - mouse.r) * (1 - Math.exp(-dt * 10));
+  const rawSpeed = Math.hypot(mouse.tx - mouse.px, mouse.ty - mouse.py) / Math.max(dt, 1e-3);
+  mouse.px = mouse.tx; mouse.py = mouse.ty;
+  A.speed += (rawSpeed - A.speed) * (1 - Math.exp(-dt * 8));
+  const cd = Math.hypot(mouse.x, mouse.y);
+  droneFrame(mouse.inside, mouse.down, Math.exp(-(cd * cd) / (280 * 280)));
+
+  const stiff = P_.stiff, damp = 2 * Math.sqrt(stiff) * 0.55;
+  for (const n of nodes) {
+    n.s += ((n.vis ? 1 : 0) - n.s) * (1 - Math.exp(-dt * 6));
+    const a = layouts[from](n), b = layouts[to](n);
+    let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
+    n.ang = a.a + (b.a - a.a) * m;
+    if (!reduce) { tx += Math.sin(time * 0.7 + n.ph) * 4; ty += Math.cos(time * 0.55 + n.ph * 1.3) * 4; }
+    let fx = (tx - n.x) * stiff, fy = (ty - n.y) * stiff;
+
+    if (mouse.inside && P_.mode !== 'blob') {
+      const dx = n.x - mouse.x, dy = n.y - mouse.y, d = Math.hypot(dx, dy) + 1e-3;
+      const R = 170 + mouse.r * 2;
+      const fall = Math.exp(-(d * d) / (R * R));
+      const s = 2600 * P_.force * fall * n.w * (mouse.down ? 1.6 : 1);
+      if (P_.mode === 'repel') { fx += dx / d * s; fy += dy / d * s; }
+      else { const pull = d > 30 ? 1 : d / 30; fx -= dx / d * s * pull; fy -= dy / d * s * pull; }
+    }
+    if (shockAmp > 0.02) {
+      const dx = n.x - shock.x, dy = n.y - shock.y, d = Math.hypot(dx, dy) + 1e-3;
+      const band = Math.exp(-((d - shockR) ** 2) / 3000);
+      const s = 9000 * shockAmp * band * n.w;
+      fx += dx / d * s; fy += dy / d * s;
+    }
+    n.vx += fx * dt; n.vy += fy * dt;
+    n.vx *= Math.exp(-damp * dt); n.vy *= Math.exp(-damp * dt);
+    n.x += n.vx * dt; n.y += n.vy * dt;
+  }
+
+  // plus marks: same springs as the shapes, and they spin when the pulse hits, snapping back to square
+  for (const q of pluses) {
+    q.s += ((q.vis ? 1 : 0) - q.s) * (1 - Math.exp(-dt * 6));
+    const a = layouts[from](q), b = layouts[to](q);
+    let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
+    if (!reduce) { tx += Math.sin(time * 0.6 + q.ph) * 3; ty += Math.cos(time * 0.5 + q.ph) * 3; }
+    let fx = (tx - q.x) * stiff, fy = (ty - q.y) * stiff;
+    if (mouse.inside && P_.mode !== 'blob') {
+      const dx = q.x - mouse.x, dy = q.y - mouse.y, d = Math.hypot(dx, dy) + 1e-3;
+      const R = 170 + mouse.r * 2;
+      const f = 2600 * P_.force * Math.exp(-(d * d) / (R * R)) * q.w * (mouse.down ? 1.6 : 1);
+      const sgn = P_.mode === 'repel' ? 1 : -Math.min(1, d / 30);
+      fx += dx / d * f * sgn; fy += dy / d * f * sgn;
+    }
+    if (shockAmp > 0.02) {
+      const dx = q.x - shock.x, dy = q.y - shock.y, d = Math.hypot(dx, dy) + 1e-3;
+      const band = Math.exp(-((d - shockR) ** 2) / 3000);
+      fx += dx / d * 9000 * shockAmp * band * q.w; fy += dy / d * 9000 * shockAmp * band * q.w;
+      q.vr += (q.ph > 3.14 ? 1 : -1) * 40 * shockAmp * band * dt * 60;
+    }
+    q.vx += fx * dt; q.vy += fy * dt;
+    q.vx *= Math.exp(-damp * dt); q.vy *= Math.exp(-damp * dt);
+    q.x += q.vx * dt; q.y += q.vy * dt;
+    const snap = Math.round(q.rot / (Math.PI / 2)) * (Math.PI / 2);
+    q.vr += (snap - q.rot) * 60 * dt;
+    q.vr *= Math.exp(-5 * dt);
+    q.rot += q.vr * dt;
+  }
+
+  // sound: blip when the cursor blob touches a shape; the pulse ring plays a cascade as it passes them
+  if (live()) {
+    const tnow = A.ctx.currentTime;
+    for (const n of nodes) {
+      if (n.s < 0.5) { n.touch = false; continue; }
+      const pan = panOf(n.x);
+      if (mouse.r > 4) {
+        const d = Math.hypot(n.x - mouse.x, n.y - mouse.y) - n.r - mouse.r;
+        if (!n.touch && d < 4) {
+          n.touch = true;
+          if (tnow - n.lastT > 0.18 && tnow - A.lastTick > 0.03) {
+            n.lastT = A.lastTick = tnow;
+            if (n.layer === 0) tick(n.freq * 2, pan, 0.07);
+            else if (n.layer === 1) tick(n.freq / 2, pan, 0.1, 'triangle', 0.25);
+            else pluck(n.freq * 2, pan, 2.5, 0.07, 0.5, 1.41);
+          }
+        } else if (n.touch && d > 16) n.touch = false;
+      } else n.touch = false;
+      if (shockAmp > 0.05 && n.shockId !== shock.id && Math.hypot(n.x - shock.x, n.y - shock.y) < shockR) {
+        n.shockId = shock.id;
+        if (tnow - A.lastCascade > 0.035) {
+          A.lastCascade = tnow;
+          tick(n.freq * (n.layer === 0 ? 2 : 1), pan, 0.02 + 0.05 * shockAmp);
+        }
+      }
+    }
+  }
+
+  if (live() && mouse.r > 4) {
+    const tnow = A.ctx.currentTime;
+    for (const q of pluses) {
+      if (q.s < 0.5) { q.touch = false; continue; }
+      const d = Math.hypot(q.x - mouse.x, q.y - mouse.y) - q.size - mouse.r;
+      if (!q.touch && d < 4) {
+        q.touch = true;
+        if (tnow - q.lastT > 0.18 && tnow - A.lastTick > 0.03) {
+          q.lastT = A.lastTick = tnow;
+          tick(q.freq * 2, panOf(q.x), 0.035, 'square', 0.05);
+        }
+      } else if (q.touch && d > 16) q.touch = false;
+    }
+  }
+
+  // labels: the blob swells and clears its centre, then the text fades in on top of it
+  for (const n of nodes) n.labT = 0;
+  const fs = flash > 0.02 ? flash * 3 : 0;
+  for (const L of labels) {
+    const target = L.si === section && L.node.s > 0.5 ? 1 : 0;
+    L.a += (target - L.a) * (1 - Math.exp(-dt * (target ? 5 : 9)));
+    // in mirror mode the right half shows the left twin's reflection, so ride that
+    const useTwin = mirror && L.node.rax > 0 && L.twin;
+    const src = useTwin ? L.twin : L.node;
+    src.labT = Math.max(src.labT, L.a);
+    const x = useTwin ? -src.x : src.x;
+    const sx = (x * scale + W / 2) / dpr, sy = (src.y * scale + H / 2) / dpr;
+    const rr = src.r * (1 + 0.22 * L.a) * scale / dpr;
+    L.el.style.transform = `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0) translate(-50%, -50%) scale(${(0.85 + 0.15 * L.a).toFixed(3)})`;
+    L.el.style.opacity = L.a < 0.01 ? '0' : (L.a * L.a).toFixed(3);
+    L.el.style.fontSize = Math.max(9, Math.min(14, rr * 0.38)).toFixed(1) + 'px';
+    L.el.style.textShadow = fs
+      ? `${-fs}px 0 rgba(213,143,101,.9), ${fs}px 0 rgba(121,212,236,.9), 0 ${fs}px rgba(229,218,73,.7), 0 ${-fs}px rgba(185,157,227,.7)`
+      : 'none';
+  }
+  for (const n of nodes) n.lab = n.labT;
+
+  const tk = 1 - Math.exp(-dt * 6);
+  if (tint.target) {
+    tint.r += (tint.target[0] / 255 - tint.r) * tk;
+    tint.g += (tint.target[1] / 255 - tint.g) * tk;
+    tint.b += (tint.target[2] / 255 - tint.b) * tk;
+  }
+  tint.amt += ((tint.target ? 1 : 0) - tint.amt) * tk;
+  invAmt += ((invert ? 1 : 0) - invAmt) * (reduce ? 1 : 1 - Math.exp(-dt * 8));
+
+  // upload
+  if (rd) {
+    rd.update(dt, mouse.inside ? worldToUv(mouse.x, mouse.y) : [-10, -10]);
+    gl.viewport(0, 0, W, H);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, rd.tex());
+  }
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  arrA.fill(0); arrB.fill(0);
+  let count = 0;
+  for (const n of nodes) {
+    if (n.s < 0.01) continue;
+    const e = n.s * n.s * (3 - 2 * n.s);
+    const c = Math.cos(n.ang || 0), s = Math.sin(n.ang || 0);
+    const ox = n.rox * c - n.roy * s, oy = n.rox * s + n.roy * c;
+    const lab = n.lab || 0;
+    const flag = n.layer === 0 ? n.flag * (1 - lab) : n.layer === 1 && lab > 0.5 ? 0 : n.flag;
+    arrA.set([n.x, n.y, n.r * e * (1 + 0.22 * lab), flag], count * 4);
+    arrB.set([n.x + ox, n.y + oy, n.hole * e * (1 - lab), n.layer], count * 4);
+    count++;
+  }
+  gl.uniform2f(U.uRes, W, H);
+  gl.uniform1f(U.uScale, scale);
+  gl.uniform1f(U.uTime, time);
+  gl.uniform4fv(U.uA, arrA);
+  gl.uniform4fv(U.uB, arrB);
+  gl.uniform1i(U.uCount, count);
+  let pc = 0;
+  for (const q of pluses) {
+    if (q.s < 0.01) continue;
+    arrP.set([q.x, q.y, Math.min(q.size * q.s, 63) + 64 * q.st, q.rot], pc * 4);
+    pc++;
+  }
+  gl.uniform4fv(U.uPl, arrP);
+  gl.uniform1i(U.uPlCount, pc);
+  gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
+  gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
+  gl.uniform1f(U.uK, Math.max(P_.k, 0.5));
+  gl.uniform1f(U.uGlow, P_.glow);
+  gl.uniform1f(U.uContours, P_.contours);
+  gl.uniform1f(U.uFlash, flash > 0.01 ? flash : 0);
+  gl.uniform1f(U.uMirror, mirror ? 1 : 0);
+  gl.uniform3f(U.uTint, tint.r, tint.g, tint.b);
+  gl.uniform1f(U.uTintAmt, tint.amt);
+  gl.uniform1f(U.uInvert, invAmt);
+  gl.uniform1i(U.uRD, 0);
+  gl.uniform1f(U.uRDAmt, rd ? P_.rd : 0);
+  gl.uniform1f(U.uSpacing, P_.spacing);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  drawScope(time);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
