@@ -58,6 +58,7 @@ body {
 }
 /* invisible scroll track: one screen per section, the field stays fixed behind */
 .sections section { height: 100vh; height: 100svh; }
+.sections section[hidden] { display: none; } /* one page at a time, picked by the nav */
 /* sections sit above the fixed canvas for their content, but let the field keep the pointer */
 .sections { position: relative; z-index: 1; pointer-events: none; }
 .filters { z-index: 2; }
@@ -728,6 +729,7 @@ select.cfield.set { color: #efefef; }
     <div class="ccol">
       <div class="tags"><span>SECONDARY</span><span>SOCIAL</span></div>
       <button type="button" data-go="1">work</button>
+      <button type="button" data-go="2">capabilities</button>
       <button type="button" data-go="3">about</button>
       <button type="button" data-go="contact">contact</button>
     </div>
@@ -1717,7 +1719,7 @@ SERVICES.forEach((sv, i) => {
   // "see work" jumps to Work, filtered to this service's tag
   el.querySelector('.see').addEventListener('click', () => {
     sel.clear(); sel.add(sv.tag); updateFilters();
-    smoothTo(sectionsEl.children[1].offsetTop);
+    goSection(1);
   });
 });
 
@@ -2279,9 +2281,10 @@ const goohead = (() => {
   document.fonts?.ready.then(build).catch(() => {});
   addEventListener('resize', () => setTimeout(build, 60));
   return {
+    build, // a hidden page can't measure, so showing Capabilities rebuilds it
     // world-space rect of the texture + how much of it to show
     frame() {
-      if (!box) return null;
+      if (!box || capsSec.hidden) return null; // hidden, it measures 0,0 and would draw in the corner
       const range = document.createRange(); range.selectNodeContents(h2);
       const r = range.getBoundingClientRect();
       if (r.bottom < -PAD || r.top > innerHeight + PAD) return null;
@@ -2926,16 +2929,41 @@ addEventListener('keydown', e => {
   if (menuOpen) setMenu(false, { focus: true }); // the menu sits on top, so it goes first
   else if (contactOpen) setContact(false);
 });
+// ---------- pages: one section at a time with the footer under it; the nav swaps them ----------
+// (the sections still exist as one flow underneath, so going back to a long scroll is just showing them all)
+const PAGE_SLUGS = ['', 'work', 'capabilities', 'about'];
+let page = 0, paging = false;
+function showPage(si) {
+  page = si;
+  [...sectionsEl.children].forEach((s, i) => { s.hidden = i !== si; });
+  if (lenis) lenis.resize();
+  if (goohead && !capsSec.hidden) goohead.build();
+  smoothTo(0, { immediate: true });
+  setSection(si); // morphs the field to the page's layout
+}
+async function goPage(si, { push = true } = {}) {
+  if (paging) return;
+  if (push) history.pushState(null, '', PAGE_SLUGS[si] ? '#' + PAGE_SLUGS[si] : location.pathname + location.search);
+  if (si === page) { smoothTo(0); return; } // already here: back to its top
+  const fade = window.gsap && !reduce ? [sectionsEl, mainFoot] : null;
+  paging = true;
+  // the field morphs straight away; the page content steps out, swaps under cover, and steps back in
+  if (fade) await new Promise(res => gsap.to(fade, { opacity: 0, y: -24, duration: 0.3, ease: 'power2.in', overwrite: true, onComplete: res }));
+  showPage(si);
+  if (fade) gsap.fromTo(fade, { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out', overwrite: true, clearProps: 'transform,opacity' });
+  paging = false;
+}
 goSection = async si => {
   setMenu(false);
   if (contactOpen) await setContact(false, { focus: false });
-  smoothTo(sectionsEl.children[si].offsetTop);
+  goPage(si);
 };
-logo.addEventListener('click', async e => {
-  e.preventDefault();
-  setMenu(false);
+logo.addEventListener('click', e => { e.preventDefault(); goSection(0); });
+// back / forward and shared links (#work, #capabilities, #about)
+const pageFromHash = () => Math.max(0, PAGE_SLUGS.indexOf(location.hash.slice(1)));
+addEventListener('popstate', async () => {
   if (contactOpen) await setContact(false, { focus: false });
-  smoothTo(0);
+  goPage(pageFromHash(), { push: false });
 });
 
 // ---------- phone menu (below 560px the nav links fold into it) ----------
@@ -2976,6 +3004,7 @@ const footUnderNav = () => document.body.classList.toggle('foot-under-nav', main
 addEventListener('scroll', footUnderNav, { passive: true });
 addEventListener('resize', footUnderNav);
 footUnderNav();
+showPage(pageFromHash());
 // one listener for both copies (cloneNode doesn't carry listeners)
 addEventListener('click', e => {
   if (e.target.closest('.cmute')) { setSound(!A.on); return; }
@@ -3080,8 +3109,9 @@ async function signalReceived(mailto) {
   cform.reset(); cform.budget.classList.remove('set');
   for (const b of chipsEl.children) b.setAttribute('aria-pressed', 'false');
   formTarget = 0;
-  smoothTo(0, { immediate: true });
   swapContact(false);
+  history.pushState(null, '', location.pathname + location.search);
+  showPage(0);
   morphTo(0);
   document.body.classList.remove('takeover');
   takingOver = false; wiping = false;
@@ -3153,16 +3183,15 @@ function frame(now) {
   const wantH = Math.max(innerHeight, Math.ceil(grid().contentCss));
   // held while contact is open: the canvas is panel-sized then, and a shorter page would move your scroll spot
   if (workEl._h !== wantH && !contactOpen) { workEl.style.height = wantH + 'px'; workEl._h = wantH; }
-  workScroll = Math.max(0, Math.min(scrollY - workEl.offsetTop, wantH - innerHeight));
-  let si = 0;
-  for (let i = 0; i < secEls.length; i++) if (secEls[i].offsetTop <= scrollY + innerHeight * 0.5) si = i;
-  setSection(si);
+  workScroll = page === 1 ? Math.max(0, Math.min(scrollY - workEl.offsetTop, wantH - innerHeight)) : 0;
+  const si = page; // the nav picks the section now, not the scroll position
   // inside Capabilities the field stays centred under the heading, then builds the cards
   if (SECTIONS[si].name === 'Capabilities' && !contactOpen) {
     const want = svcList.getBoundingClientRect().top < innerHeight * 0.6 ? CAPS : SECTIONS[si].layout;
     if (want !== to) morphTo(want);
   }
-  if (to === CAPS || from === CAPS) capsGeo = measureCaps(); else capsPrev = null;
+  // once the page is gone the cards measure 0,0, so the tiles morph out from where they last were
+  if (to === CAPS || from === CAPS) { if (!capsSec.hidden) capsGeo = measureCaps(); } else capsPrev = null;
   morphT = Math.min(1, morphT + dt / 1.4);
   const m = ease(morphT);
   shock.age += dt;
