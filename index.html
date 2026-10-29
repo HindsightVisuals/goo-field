@@ -153,6 +153,35 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 .thumb .meta strong { font-weight: 500; font-size: 11px; }
 .thumb .meta span { color: rgba(232, 236, 236, 0.72); }
 .thumb:focus-visible { outline: 1px solid var(--accent); outline-offset: 4px; }
+.thumb .head {
+  position: absolute; left: 14px; right: 14px; top: 50%; transform: translateY(-50%);
+  font-size: clamp(14px, 1.5vw, 24px); line-height: 1.15; font-weight: 500;
+}
+.thumb.text { transition: background-color 0.35s ease; }
+.thumb.text:hover, .thumb.text:focus-visible { background: rgba(232, 236, 236, 0.06); }
+/* tag filters: AND together; a tag that would leave nothing greys out */
+.filters {
+  position: fixed; top: calc(24px + env(safe-area-inset-top, 0px)); left: 64px; right: 64px;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+  opacity: 0; pointer-events: none; transition: opacity 0.35s ease;
+}
+.filters.on { opacity: 1; pointer-events: auto; }
+.filters button {
+  font: inherit; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg); background: var(--panel); backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; transition: opacity 0.25s, background-color 0.2s, color 0.2s;
+}
+.filters button .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.filters button:hover:not(:disabled) { border-color: var(--fg); }
+.filters button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.filters button[aria-pressed="true"] .n { color: inherit; opacity: 0.6; }
+.filters button:disabled { opacity: 0.28; cursor: not-allowed; }
+.filters .clear { border-style: dashed; }
+.hud { transition: opacity 0.35s ease; }
+body.in-work .hud { opacity: 0; }
+@media (max-width: 700px) { .filters { left: 16px; right: 16px; justify-content: flex-start; } }
+@media (prefers-reduced-motion: reduce) { .filters, .hud { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .thumb img { transition: none; } }
 </style>
 
@@ -161,6 +190,7 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 <div class="labels" id="labels" aria-hidden="true"></div>
 
 <div class="thumbs" id="thumbs"></div>
+<div class="filters" id="filters" role="group" aria-label="Filter case studies by tag"></div>
 
 <main class="sections" id="sections"></main>
 
@@ -603,53 +633,101 @@ const layouts = [
     return { x, y, a: 0 };
   },
 ];
-// 5 work: shells become a grid of project tiles, the goo core beads along the gutters,
-// everything else rings the grid. Only reached from the Work section (space skips it).
+// 5 work: shells become a grid of case-study tiles (3 wide, 16:9, filling the width), the goo
+// core beads along the gutters, everything else rings the viewport. The grid runs taller than
+// the screen, so the Work section scrolls it. Only reached from the Work section (space skips it).
+// Case studies + Work Tags mirror Master Brain / Portfolio 2.0 — Wes / 04 Content / Case Studies.
+// img: a file in work/ (no extension), or '' for a text tile until there's a thumbnail.
 const PROJECTS = [
-  { slug: 'know-good', title: 'Know Good', tags: '3D · Motion · Concert' },
-  { slug: 'addax', title: 'Addax', tags: 'Web · 3D · Interactive' },
-  { slug: 'spy-hop', title: 'Spy Hop', tags: 'Web · Design system' },
-  { slug: 'juan-valdez', title: 'Juan Valdez', tags: '3D · Product' },
-  { slug: 'naboso', title: 'Naboso', tags: '3D · Motion · ID' },
-  { slug: 'animal', title: 'Animal', tags: '3D · Motion · Product' },
-  { slug: 'babaloo', title: 'Babaloo', tags: '3D · Motion · Product' },
-  { slug: 'hindsight', title: 'Hindsight', tags: '3D · Concert · VJ' },
+  { slug: 'know-good', title: 'Know Good', head: 'Know Good Tour Visual System', img: 'know-good',
+    tags: ['3D', 'Animation', 'Character Animation', 'Concert'] },
+  { slug: 'addax', title: 'Addax', head: 'A Modular Trailer Customizer', img: 'addax',
+    tags: ['3D', 'UX/UI', 'Website', 'Game Ready'] },
+  { slug: 'spy-hop', title: 'Spy Hop', head: 'Helping the Next Generation of Artistic Youth', img: 'spy-hop',
+    tags: ['Website', 'UX/UI', 'Design', 'Project Management'] },
+  { slug: 'juan-valdez', title: 'Juan Valdez', head: 'Bringing a Taste of Colombia North America', img: 'juan-valdez',
+    tags: ['Art Direction', '3D', 'Design', 'Product Animation', 'Product Vis'] },
+  { slug: 'naboso', title: 'Naboso', head: 'Free the Feeling', img: 'naboso',
+    tags: ['Product Animation', 'Product Vis', '3D', 'Modeling', 'Design', 'Art Direction'] },
+  { slug: 'animal', title: 'Animal', head: 'Adding Dimension', img: 'animal',
+    tags: ['3D', 'Design', 'Animation', 'Art Direction'] },
+  { slug: 'babaloo', title: 'Babaloo', head: 'Demystifying the World’s Most Innovative Baby Bottle', img: 'babaloo',
+    tags: ['Animation', '3D', 'Modeling', 'Product Vis', 'Product Animation'] },
+  { slug: 'hindsight', title: 'Hindsight', head: 'An Alias for My Biggest Passion', img: 'hindsight',
+    tags: ['Concert', '3D', 'Animation', 'Character Animation', 'Modeling'] },
+  { slug: 'lofli-balls', title: 'LoFli Balls', head: 'Grand Slam, Half the Flight', img: '',
+    tags: ['Website', '3D', 'Animation', 'Art Direction', 'UX/UI', 'Product Animation'] },
+  { slug: 'gibs', title: 'Gibs', head: 'Time to Ditch the 3-in-1', img: '',
+    tags: ['UX/UI', 'Website', 'Art Direction'] },
+  { slug: 'crawdad-sniper', title: 'Crawdad Sniper', head: 'Where the Crawdads Fight', img: '',
+    tags: ['3D', 'Animation', 'Concert', 'Modeling', 'Game Ready'] },
+  { slug: 'humandala', title: 'Humandala', head: 'Spying on Infringement', img: '',
+    tags: ['3D', 'Animation', 'Character Animation', 'Concert'] },
+  { slug: 'thought-process', title: 'Thought Process', head: 'Trusting the Process', img: '',
+    tags: ['3D', 'Animation', 'Art Direction', 'Character Animation', 'Concert'] },
 ];
+// tags by how many case studies use them, then A–Z
+const TAGS = [...new Set(PROJECTS.flatMap(p => p.tags))].sort((a, b) =>
+  PROJECTS.filter(p => p.tags.includes(b)).length - PROJECTS.filter(p => p.tags.includes(a)).length || a.localeCompare(b));
+const sel = new Set();
+const matches = p => [...sel].every(t => p.tags.includes(t));
+const filtersEl = document.getElementById('filters');
 const WORK = 5, CYCLE = 5; // space/Morph cycle the first five layouts
-let gridCache = null;
+let gridCache = null, gridVer = 0; // gridVer bumps whenever the filter changes
+let workScroll = 0, workScrollApplied = 0; // css px the Work section has scrolled into the grid
+
+// each case study owns one dark shell for good; pair them roughly by position so the morph is short
+const tileNode = [];
+{
+  const pool = nodes.filter(n => n.layer === 1 && !n.rox && !n.roy);
+  for (const n of nodes) n.tile = -1;
+  PROJECTS.forEach((_, i) => {
+    const gx = (i % 3 - 1) * 280, gy = -320 + Math.floor(i / 3) * 150;
+    let best = null, bd = Infinity;
+    for (const n of pool) if (n.tile < 0) {
+      const d = Math.hypot(n.rax - gx, n.ray - gy);
+      if (d < bd) { bd = d; best = n; }
+    }
+    if (best) { best.tile = i; tileNode[i] = best; }
+  });
+}
+
 function grid() {
-  // 16:9 tiles filling the width: PAD css px at the sides and between tiles, spare room top and
-  // bottom (if a short window can't fit them, they fit the height instead)
-  const key = W + 'x' + H;
+  const key = W + 'x' + H + ':' + gridVer;
   if (gridCache && gridCache.key === key) return gridCache;
   const narrow = W / dpr < 700;
   const u = dpr / scale; // world units per css px
-  const pad = (narrow ? 16 : 32) * u, gap = (narrow ? 16 : 32) * u;
-  const cols = narrow ? 2 : 4, rows = PROJECTS.length / cols;
-  const maxW = W / scale - 2 * pad, maxH = H / scale - 2 * pad;
-  let tw = (maxW - (cols - 1) * gap) / cols, th = tw * 9 / 16;
-  if (rows * th + (rows - 1) * gap > maxH) { th = (maxH - (rows - 1) * gap) / rows; tw = th * 16 / 9; }
-  const hw = (cols * tw + (cols - 1) * gap) / 2, hh = (rows * th + (rows - 1) * gap) / 2;
-  const centers = [];
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
-    centers.push([-hw + tw / 2 + c * (tw + gap), -hh + th / 2 + r * (th + gap)]);
+  const pad = (narrow ? 24 : 64) * u, gap = pad;
+  const cols = narrow ? 1 : 3;
+  const shown = PROJECTS.map((_, i) => i).filter(i => matches(PROJECTS[i]));
+  const rows = Math.max(1, Math.ceil(shown.length / cols));
+  const vw = W / scale, vh = H / scale, hw = vw / 2 - pad;
+  const tw = (vw - 2 * pad - (cols - 1) * gap) / cols, th = tw * 9 / 16;
+  const gh = rows * th + (rows - 1) * gap;
+  // the grid starts under the filter bar; if everything fits it centres instead
+  const top = Math.max(pad, (filtersEl.getBoundingClientRect().bottom + (narrow ? 16 : 32)) * u);
+  const y0 = top + gh + pad <= vh ? Math.max(top, (vh - gh) / 2) : top;
+  const gy0 = -vh / 2 + y0, gy1 = gy0 + gh;
+  const slot = new Map(); // project index → tile centre, unscrolled
+  shown.forEach((pi, k) => {
+    const r = Math.floor(k / cols), c = k % cols;
+    const inRow = Math.min(cols, shown.length - r * cols); // a short last row centres
+    const rowW = inRow * tw + (inRow - 1) * gap;
+    slot.set(pi, [-rowW / 2 + tw / 2 + c * (tw + gap), gy0 + th / 2 + r * (th + gap)]);
+  });
   // gutters between tiles, as segments the core beads along
   const gut = [];
-  for (let c = 1; c < cols; c++) { const x = -hw + c * (tw + gap) - gap / 2; gut.push([x, -hh, x, hh]); }
-  for (let r = 1; r < rows; r++) { const y = -hh + r * (th + gap) - gap / 2; gut.push([-hw, y, hw, y]); }
+  for (let r = 0; r < rows; r++) {
+    // vertical gutters per row, since a short last row is centred and its gaps shift
+    const inRow = Math.min(cols, shown.length - r * cols), rowW = inRow * tw + (inRow - 1) * gap;
+    const ya = Math.max(gy0, gy0 + r * (th + gap) - gap / 2), yb = Math.min(gy1, gy0 + r * (th + gap) + th + gap / 2);
+    for (let c = 1; c < inRow; c++) { const x = -rowW / 2 + c * (tw + gap) - gap / 2; gut.push([x, ya, x, yb]); }
+    if (r > 0) { const y = gy0 + r * (th + gap) - gap / 2; gut.push([-hw, y, hw, y]); }
+  }
+  if (!gut.length) gut.push([-hw, gy1 + gap / 2, hw, gy1 + gap / 2]);
   const glen = gut.reduce((t, g) => t + Math.hypot(g[2] - g[0], g[3] - g[1]), 0);
-  // each tile takes the nearest free base shell, so the morph travels as little as possible
-  const pool = nodes.slice(0, BASE).filter(n => n.layer === 1 && !n.rox && !n.roy);
-  for (const n of nodes) n.tile = -1;
-  centers.forEach((c, i) => {
-    let best = null, bd = Infinity;
-    for (const n of pool) if (n.tile < 0) {
-      const d = Math.hypot(n.rax - c[0], n.ray - c[1]);
-      if (d < bd) { bd = d; best = n; }
-    }
-    if (best) best.tile = i;
-  });
-  return (gridCache = { key, narrow, u, cols, rows, tw, th, gap, hw, hh, centers, gut, glen });
+  const contentCss = (y0 + gh + pad) / u; // how tall the Work section has to be to scroll it all
+  return (gridCache = { key, narrow, u, cols, tw, th, gap, hw, vw, vh, slot, gut, glen, contentCss });
 }
 const coreNodes = nodes.filter(n => n.layer === 0);
 coreNodes.forEach((n, i) => { n.ci = i; });
@@ -662,24 +740,29 @@ function gutterPoint(G, t) {
   }
   return [0, 0];
 }
+// parked around the viewport edge, a little ragged: glyphs just inside, shells just outside
+function edgeRing(n, G, rs) {
+  const Hx = G.vw / 2 + (n.layer === 3 ? -28 : 14), Hy = G.vh / 2 + (n.layer === 3 ? -28 : 14);
+  const len = Math.hypot(n.rax, n.ray) || 1, dx = n.rax / len, dy = n.ray / len;
+  const t = 1 / Math.max(Math.abs(dx) / Hx, Math.abs(dy) / Hy) * (1 + 0.04 * Math.sin(n.ph * 3));
+  return { x: dx * t, y: dy * t, a: 0, rs };
+}
+const inGrid = n => n.layer === 0 || (n.tile >= 0 && grid().slot.has(n.tile));
 layouts.push(n => {
   const G = grid();
-  if (n.layer === 1 && n.tile >= 0) {
-    const c = G.centers[n.tile];
-    const m = Math.min(G.tw, G.th) / 2;
-    return { x: c[0], y: c[1], a: 0, rs: m / (n.r * 0.92), cr: Math.min(0.9, 12 * G.u / m),
-      ex: G.tw / 2 - m, ey: G.th / 2 - m };
+  const sy = workScroll * G.u;
+  if (n.tile >= 0) {
+    const c = G.slot.get(n.tile);
+    if (!c) return edgeRing(n, G, 0.35); // filtered out
+    const m = G.th / 2;
+    return { x: c[0], y: c[1] - sy, a: 0, rs: m / (n.r * 0.92), cr: Math.min(0.9, 12 * G.u / m),
+      ex: G.tw / 2 - m, ey: 0 };
   }
   if (n.layer === 0) {
     const [x, y] = gutterPoint(G, n.ci * 0.6180339 + 0.05);
-    return { x, y, a: 0, rs: Math.min(1, 4 * G.u / n.r) };
+    return { x, y: y - sy, a: 0, rs: Math.min(1, 4 * G.u / n.r) };
   }
-  // the rest ring the grid on a rounded rectangle, a little ragged
-  const out = n.layer === 3 ? 110 : 70;
-  const Hx = G.hw + out, Hy = G.hh + out + 20;
-  const len = Math.hypot(n.rax, n.ray) || 1, dx = n.rax / len, dy = n.ray / len;
-  const t = 1 / Math.max(Math.abs(dx) / Hx, Math.abs(dy) / Hy) * (1 + 0.1 * Math.sin(n.ph * 3));
-  return { x: dx * t, y: dy * t, a: 0, rs: n.layer === 3 ? 1 : 0.5 };
+  return edgeRing(n, G, n.layer === 3 ? 1 : 0.5);
 });
 const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder', 'Work'];
 // background orbit lines take the layout's shape too: weights for circle, square, diamond, drum
@@ -772,7 +855,7 @@ SECTIONS.forEach((sec, si) => {
   sectionsEl.appendChild(s);
   const b = document.createElement('button');
   b.textContent = sec.name;
-  b.addEventListener('click', () => scrollTo({ top: si * innerHeight, behavior: reduce ? 'auto' : 'smooth' }));
+  b.addEventListener('click', () => scrollTo({ top: s.offsetTop, behavior: reduce ? 'auto' : 'smooth' }));
   secnav.appendChild(b); navBtns.push(b);
   const c = NAV_COLORS[si % NAV_COLORS.length];
   b.style.setProperty('--c', `rgb(${c.join(',')})`);
@@ -1368,15 +1451,17 @@ canvas.addEventListener('pointerleave', () => { mouse.inside = false; mouse.down
 const thumbsEl = document.getElementById('thumbs');
 const thumbs = PROJECTS.map((pr, i) => {
   const el = document.createElement('a');
-  el.className = 'thumb';
+  el.className = 'thumb' + (pr.img ? '' : ' text');
   el.href = '#work/' + pr.slug; // placeholder: point at the case study when this goes live
   el.tabIndex = -1;
-  el.setAttribute('aria-label', pr.title + ', ' + pr.tags);
-  el.innerHTML = `<img src="work/${pr.slug}.webp" alt="" loading="lazy" decoding="async">
+  el.setAttribute('aria-label', pr.title + ': ' + pr.head + '. ' + pr.tags.join(', '));
+  el.innerHTML = (pr.img
+    ? `<img src="work/${pr.img}.webp" alt="" loading="lazy" decoding="async">`
+    : `<span class="head">${pr.head}</span>`) + `
     <span class="num">${String(i + 1).padStart(2, '0')}</span>
-    <span class="meta"><strong>${pr.title}</strong><span>${pr.tags}</span></span>`;
+    <span class="meta"><strong>${pr.title}</strong><span>${pr.tags.slice(0, 3).join(' · ')}</span></span>`;
   thumbsEl.appendChild(el);
-  const T = { el, i, hover: false, live: false };
+  const T = { el, i, hover: false, live: false, a: 0 };
   const c = NAV_COLORS[i % NAV_COLORS.length];
   const on = () => { T.hover = true; tint.target = c; tick(noteFreq(9 + i), 0, 0.05, 'triangle', 0.18); };
   const off = () => { T.hover = false; if (tint.target === c) tint.target = null; };
@@ -1385,7 +1470,7 @@ const thumbs = PROJECTS.map((pr, i) => {
   el.addEventListener('click', e => {
     e.preventDefault();
     audioInit();
-    const n = nodes.find(k => k.tile === i);
+    const n = tileNode[i];
     if (!n) return;
     pluck(noteFreq(10 + i), panOf(n.x), 1.2, 0.26, 1.6);
     zap(panOf(n.x));
@@ -1395,6 +1480,42 @@ const thumbs = PROJECTS.map((pr, i) => {
   });
   return T;
 });
+// ---------- tag filters ----------
+const clearBtn = document.createElement('button');
+clearBtn.className = 'clear'; clearBtn.textContent = 'Clear';
+const tagBtns = TAGS.map((t, k) => {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.innerHTML = `<span></span><span class="n"></span>`;
+  el.firstChild.textContent = t;
+  el.addEventListener('click', () => {
+    if (sel.has(t)) sel.delete(t); else sel.add(t);
+    audioInit();
+    tick(noteFreq(8 + (k % 7)), 0, 0.05, sel.has(t) ? 'triangle' : 'sine', 0.14);
+    updateFilters();
+  });
+  filtersEl.appendChild(el);
+  return { t, el, n: el.lastChild };
+});
+clearBtn.addEventListener('click', () => { sel.clear(); tick(noteFreq(6), 0, 0.05, 'sine', 0.14); updateFilters(); });
+filtersEl.appendChild(clearBtn);
+function updateFilters() {
+  const cur = PROJECTS.filter(matches);
+  for (const B of tagBtns) {
+    const on = sel.has(B.t);
+    // count = what you'd see after clicking; 0 means that combination doesn't exist
+    const n = on ? cur.length : cur.filter(p => p.tags.includes(B.t)).length;
+    B.el.setAttribute('aria-pressed', String(on));
+    B.el.disabled = !on && n === 0;
+    B.n.textContent = n;
+  }
+  clearBtn.disabled = sel.size === 0;
+  gridVer++;
+}
+updateFilters();
+// the bar's height (and so the grid's top) settles once the webfont is in
+document.fonts?.ready.then(() => { gridVer++; }).catch(() => {});
+
 canvas.addEventListener('pointerdown', e => {
   [mouse.tx, mouse.ty] = toWorld(e);
   if (!mouse.inside) { mouse.x = mouse.tx; mouse.y = mouse.ty; }
@@ -1427,7 +1548,14 @@ let last = performance.now(), time = 0;
 }
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 1 / 30); last = now; time += dt;
-  setSection(Math.max(0, Math.min(SECTIONS.length - 1, Math.round(scrollY / innerHeight))));
+  // Work is as tall as its grid, and scrolling inside it scrolls the tiles
+  const secEls = sectionsEl.children, workEl = secEls[1];
+  const wantH = Math.max(innerHeight, Math.ceil(grid().contentCss));
+  if (workEl._h !== wantH) { workEl.style.height = wantH + 'px'; workEl._h = wantH; }
+  workScroll = Math.max(0, Math.min(scrollY - workEl.offsetTop, wantH - innerHeight));
+  let si = 0;
+  for (let i = 0; i < secEls.length; i++) if (secEls[i].offsetTop <= scrollY + innerHeight * 0.5) si = i;
+  setSection(si);
   morphT = Math.min(1, morphT + dt / 1.4);
   const m = ease(morphT);
   shock.age += dt;
@@ -1447,9 +1575,14 @@ function frame(now) {
   const cd = Math.hypot(mouse.x, mouse.y);
   droneFrame(mouse.inside, mouse.down, Math.exp(-(cd * cd) / (280 * 280)));
 
+  const scrollD = (workScroll - workScrollApplied) * grid().u * workAmt;
+  workScrollApplied = workScroll;
   const stiff = P_.stiff, damp = 2 * Math.sqrt(stiff) * 0.55;
   for (const n of nodes) {
-    n.s += ((n.vis ? 1 : 0) - n.s) * (1 - Math.exp(-dt * 6));
+    if (scrollD && inGrid(n)) n.y -= scrollD;
+    // case-study shells show in Work whatever the ball count
+    const want = n.vis || (n.tile >= 0 && (to === WORK || from === WORK));
+    n.s += ((want ? 1 : 0) - n.s) * (1 - Math.exp(-dt * 6));
     const a = layouts[from](n), b = layouts[to](n);
     let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
     n.ang = a.a + (b.a - a.a) * m;
@@ -1558,9 +1691,16 @@ function frame(now) {
   workAmt = (from === WORK ? 1 - m : 0) + (to === WORK ? m : 0);
   const G = grid();
   const ta = Math.max(0, (workAmt - 0.7) / 0.3);
+  const inWork = section === 1 && workAmt > 0.6;
+  if (inWork !== filtersEl.classList.contains('on')) {
+    filtersEl.classList.toggle('on', inWork);
+    document.body.classList.toggle('in-work', inWork);
+  }
   for (const T of thumbs) {
-    const n = nodes.find(k => k.tile === T.i);
+    const n = tileNode[T.i];
     if (!n) continue;
+    const shown = G.slot.has(T.i);
+    T.a += ((shown ? ta : 0) - T.a) * (1 - Math.exp(-dt * 9));
     n.hov = (n.hov || 0) + ((T.hover ? 1 : 0) - (n.hov || 0)) * (1 - Math.exp(-dt * 10));
     const k = (1 + 0.02 * n.hov) * scale / dpr, inset = 3 * G.u;
     const w = (G.tw - inset * 2) * k, h = (G.th - inset * 2) * k;
@@ -1568,8 +1708,8 @@ function frame(now) {
     T.el.style.width = w.toFixed(1) + 'px'; T.el.style.height = h.toFixed(1) + 'px';
     T.el.style.borderRadius = '9px';
     T.el.style.transform = `translate3d(${(sx - w / 2).toFixed(1)}px, ${(sy - h / 2).toFixed(1)}px, 0)`;
-    T.el.style.opacity = (ta * ta).toFixed(3);
-    const live = ta > 0.6;
+    T.el.style.opacity = (T.a * T.a).toFixed(3);
+    const live = shown && T.a > 0.6;
     if (live !== T.live) { T.live = live; T.el.classList.toggle('live', live); T.el.tabIndex = live ? 0 : -1; }
   }
 
