@@ -130,11 +130,37 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
   .scope canvas { height: 44px; }
 }
 .check input { accent-color: var(--accent); margin: 0; }
+/* work thumbnails: DOM tiles riding on the shader's tile shapes */
+.thumbs { position: fixed; inset: 0; pointer-events: none; }
+.thumb {
+  position: absolute; left: 0; top: 0; display: block; overflow: hidden;
+  color: #e8ecec; text-decoration: none; opacity: 0; pointer-events: none;
+  will-change: transform, opacity;
+}
+.thumb.live { pointer-events: auto; cursor: pointer; }
+.thumb img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  filter: grayscale(1) contrast(1.08) brightness(0.72);
+  transition: filter 0.35s ease, transform 0.6s ease;
+}
+.thumb:hover img, .thumb:focus-visible img { filter: none; transform: scale(1.05); }
+.thumb .num, .thumb .meta {
+  position: absolute; left: 9px; right: 9px; font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+}
+.thumb .num { top: 7px; }
+.thumb .meta { bottom: 7px; display: grid; gap: 1px; }
+.thumb .meta strong { font-weight: 500; font-size: 11px; }
+.thumb .meta span { color: rgba(232, 236, 236, 0.72); }
+.thumb:focus-visible { outline: 1px solid var(--accent); outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) { .thumb img { transition: none; } }
 </style>
 
 <canvas id="c"></canvas>
 
 <div class="labels" id="labels" aria-hidden="true"></div>
+
+<div class="thumbs" id="thumbs"></div>
 
 <main class="sections" id="sections"></main>
 
@@ -577,10 +603,79 @@ const layouts = [
     return { x, y, a: 0 };
   },
 ];
-const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder'];
+// 5 work: shells become a grid of project tiles, the goo core beads along the gutters,
+// everything else rings the grid. Only reached from the Work section (space skips it).
+const PROJECTS = [
+  { slug: 'know-good', title: 'Know Good', tags: '3D · Motion · Concert' },
+  { slug: 'addax', title: 'Addax', tags: 'Web · 3D · Interactive' },
+  { slug: 'spy-hop', title: 'Spy Hop', tags: 'Web · Design system' },
+  { slug: 'juan-valdez', title: 'Juan Valdez', tags: '3D · Product' },
+  { slug: 'naboso', title: 'Naboso', tags: '3D · Motion · ID' },
+  { slug: 'animal', title: 'Animal', tags: '3D · Motion · Product' },
+  { slug: 'babaloo', title: 'Babaloo', tags: '3D · Motion · Product' },
+  { slug: 'hindsight', title: 'Hindsight', tags: '3D · Concert · VJ' },
+];
+const WORK = 5, CYCLE = 5; // space/Morph cycle the first five layouts
+let gridCache = null;
+function grid() {
+  const narrow = W / scale < 860;
+  if (gridCache && gridCache.narrow === narrow) return gridCache;
+  const cols = narrow ? 2 : 4, rows = PROJECTS.length / cols;
+  const tw = narrow ? 200 : 182, th = narrow ? 138 : 128, gap = narrow ? 40 : 46;
+  const hw = (cols * tw + (cols - 1) * gap) / 2, hh = (rows * th + (rows - 1) * gap) / 2;
+  const centers = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+    centers.push([-hw + tw / 2 + c * (tw + gap), -hh + th / 2 + r * (th + gap)]);
+  // gutters between tiles, as segments the core beads along
+  const gut = [];
+  for (let c = 1; c < cols; c++) { const x = -hw + c * (tw + gap) - gap / 2; gut.push([x, -hh, x, hh]); }
+  for (let r = 1; r < rows; r++) { const y = -hh + r * (th + gap) - gap / 2; gut.push([-hw, y, hw, y]); }
+  const glen = gut.reduce((t, g) => t + Math.hypot(g[2] - g[0], g[3] - g[1]), 0);
+  // each tile takes the nearest free base shell, so the morph travels as little as possible
+  const pool = nodes.slice(0, BASE).filter(n => n.layer === 1 && !n.rox && !n.roy);
+  for (const n of nodes) n.tile = -1;
+  centers.forEach((c, i) => {
+    let best = null, bd = Infinity;
+    for (const n of pool) if (n.tile < 0) {
+      const d = Math.hypot(n.rax - c[0], n.ray - c[1]);
+      if (d < bd) { bd = d; best = n; }
+    }
+    if (best) best.tile = i;
+  });
+  return (gridCache = { narrow, cols, rows, tw, th, gap, hw, hh, centers, gut, glen });
+}
+const coreNodes = nodes.filter(n => n.layer === 0);
+coreNodes.forEach((n, i) => { n.ci = i; });
+function gutterPoint(G, t) {
+  let d = ((t % 1) + 1) % 1 * G.glen;
+  for (const g of G.gut) {
+    const l = Math.hypot(g[2] - g[0], g[3] - g[1]);
+    if (d <= l) return [g[0] + (g[2] - g[0]) * d / l, g[1] + (g[3] - g[1]) * d / l];
+    d -= l;
+  }
+  return [0, 0];
+}
+layouts.push(n => {
+  const G = grid();
+  if (n.layer === 1 && n.tile >= 0) {
+    const c = G.centers[n.tile];
+    return { x: c[0], y: c[1], a: 0, rs: G.th / 2 / (n.r * 0.92), cr: 0.12, ex: (G.tw - G.th) / 2, ey: 0 };
+  }
+  if (n.layer === 0) {
+    const [x, y] = gutterPoint(G, n.ci * 0.6180339 + 0.05);
+    return { x, y, a: 0, rs: Math.min(1, 8 / n.r) };
+  }
+  // the rest ring the grid on a rounded rectangle, a little ragged
+  const out = n.layer === 3 ? 110 : 70;
+  const Hx = G.hw + out, Hy = G.hh + out + 20;
+  const len = Math.hypot(n.rax, n.ray) || 1, dx = n.rax / len, dy = n.ray / len;
+  const t = 1 / Math.max(Math.abs(dx) / Hx, Math.abs(dy) / Hy) * (1 + 0.1 * Math.sin(n.ph * 3));
+  return { x: dx * t, y: dy * t, a: 0, rs: n.layer === 3 ? 1 : 0.5 };
+});
+const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder', 'Work'];
 // background orbit lines take the layout's shape too: weights for circle, square, diamond, drum
-const LAYOUT_ORB = [[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
-let from = 0, to = 0, morphT = 1;
+const LAYOUT_ORB = [[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0]];
+let from = 0, to = 0, morphT = 1, workAmt = 0;
 const morphBtn = document.getElementById('morph');
 
 // ---------- glyphs: the Illustrator shape sheet, rebuilt as SDFs ----------
@@ -645,7 +740,7 @@ setGlyphCount(Math.min(16, GN));
 // Edit text / positions here.
 const SECTIONS = [
   { name: 'Intro', title: 'A field that listens', layout: 0, labels: [['Scroll', 0, 262]] },
-  { name: 'Work', title: 'Selected work', layout: 1, labels: [['Motion', -62, -168], ['3D', 118, -95], ['Sound', -122, 40], ['Systems', 64, 105]] },
+  { name: 'Work', title: 'Selected work', layout: 5, labels: [] }, // thumbnails instead of labels
   { name: 'About', title: 'How it’s made', layout: 2, labels: [['Studio', -225, -25], ['Process', 247, -25], ['Tools', -64, 105]] },
   { name: 'Contact', title: 'Say hello', layout: 3, labels: [['Email', 62, -168], ['Instagram', -225, 93], ['Say hi', 0, 345]] },
 ];
@@ -732,7 +827,6 @@ float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453
 float sdBox(vec2 p, vec2 b){ vec2 d = abs(p) - b; return length(max(d, 0.)) + min(max(d.x, d.y), 0.); }
 // circle → square family: cr is the corner radius as a fraction of r (1 = circle)
 float shp(vec2 q, float r, float cr){ return sdBox(q, vec2(r * (1. - cr))) - r * cr; }
-float cornerOf(float sq){ return sq < 0.5 ? 1. : sq < 1.5 ? 0.62 : sq < 2.5 ? 0.4 : 0.2; }
 // glyph a = (x, y, size, rot), b = (type, param, style bits, inner frac); returns local coords + minor half-extent
 float glyphSD(vec4 a, vec4 b, vec2 p, out vec2 q, out float mn){
   q = p - a.xy;
@@ -771,10 +865,12 @@ vec3 scene(vec2 p){
   for (int i = 0; i < N; i++) {
     if (i >= uCount) break;
     vec4 A = uA[i], B = uB[i];
-    // B.w packs layer + 4 * squareness
-    float lay = mod(B.w, 4.), cr = cornerOf(floor(B.w / 4.));
+    // B.w packs layer + 4 * corner (0-255, 255 = round). Round shapes are capsules A→B;
+    // cornered ones are boxes centred on A, with |B - A| as extra half-extent (rectangles)
+    float lay = mod(B.w, 4.), cr = floor(B.w / 4.) / 255.;
     vec2 lq = p - A.xy;
-    float d = cr > 0.99 ? sdSeg(p, A.xy, B.xy, A.z) : shp(lq, A.z * 0.92, cr);
+    float rr = A.z * 0.92;
+    float d = cr > 0.99 ? sdSeg(p, A.xy, B.xy, A.z) : sdBox(lq, vec2(rr * (1. - cr)) + abs(B.xy - A.xy)) - rr * cr;
     if (lay < 0.5) {
       core = smin(core, d, k);
       shell = smin(shell, d - A.z * 0.3 - 16., k * 2.2);
@@ -1219,7 +1315,7 @@ function morphTo(i) {
   morphSweep(to);
   morphBtn.textContent = 'Morph · ' + LAYOUT_NAMES[to];
 }
-function morph() { morphTo((to + 1) % layouts.length); }
+function morph() { morphTo(to >= CYCLE ? 0 : (to + 1) % CYCLE); }
 const vol = document.getElementById('vol'), volO = document.getElementById('vol-o');
 vol.addEventListener('input', () => {
   A.vol = +vol.value / 100; volO.textContent = vol.value;
@@ -1258,6 +1354,38 @@ canvas.addEventListener('pointermove', e => {
   mouse.inside = true;
 });
 canvas.addEventListener('pointerleave', () => { mouse.inside = false; mouse.down = false; });
+
+// ---------- work thumbnails ----------
+const thumbsEl = document.getElementById('thumbs');
+const thumbs = PROJECTS.map((pr, i) => {
+  const el = document.createElement('a');
+  el.className = 'thumb';
+  el.href = '#work/' + pr.slug; // placeholder: point at the case study when this goes live
+  el.tabIndex = -1;
+  el.setAttribute('aria-label', pr.title + ', ' + pr.tags);
+  el.innerHTML = `<img src="work/${pr.slug}.webp" alt="" loading="lazy" decoding="async">
+    <span class="num">${String(i + 1).padStart(2, '0')}</span>
+    <span class="meta"><strong>${pr.title}</strong><span>${pr.tags}</span></span>`;
+  thumbsEl.appendChild(el);
+  const T = { el, i, hover: false, live: false };
+  const c = NAV_COLORS[i % NAV_COLORS.length];
+  const on = () => { T.hover = true; tint.target = c; tick(noteFreq(9 + i), 0, 0.05, 'triangle', 0.18); };
+  const off = () => { T.hover = false; if (tint.target === c) tint.target = null; };
+  el.addEventListener('pointerenter', on); el.addEventListener('pointerleave', off);
+  el.addEventListener('focus', on); el.addEventListener('blur', off);
+  el.addEventListener('click', e => {
+    e.preventDefault();
+    audioInit();
+    const n = nodes.find(k => k.tile === i);
+    if (!n) return;
+    pluck(noteFreq(10 + i), panOf(n.x), 1.2, 0.26, 1.6);
+    zap(panOf(n.x));
+    if (!reduce) { shock.x = n.x; shock.y = n.y; shock.age = 0; shock.id++; }
+    if (rd) { const [u, v] = worldToUv(n.x, n.y); rd.splat(u, v, 12); }
+    flash = reduce ? 0.35 : 1;
+  });
+  return T;
+});
 canvas.addEventListener('pointerdown', e => {
   [mouse.tx, mouse.ty] = toWorld(e);
   if (!mouse.inside) { mouse.x = mouse.tx; mouse.y = mouse.ty; }
@@ -1271,11 +1399,12 @@ canvas.addEventListener('pointerdown', e => {
   if (rd) { const [u, v] = worldToUv(mouse.tx, mouse.ty); rd.splat(u, v, 12); }
   else { shock.x = mouse.tx; shock.y = mouse.ty; }
   flash = reduce ? 0.35 : 1;
-  if (morphClick.checked) morph();
+  if (morphClick.checked && to !== WORK) morph(); // clicks in the grid shouldn't break it up
 });
 addEventListener('pointerup', () => { mouse.down = false; });
 
 // ---------- sim ----------
+const CORNER = [1, 0.62, 0.4, 0.2]; // sq → corner radius fraction
 const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 let last = performance.now(), time = 0;
 // ?layout=1..4 opens straight into that formation (handy for sharing one)
@@ -1315,6 +1444,11 @@ function frame(now) {
     const a = layouts[from](n), b = layouts[to](n);
     let tx = a.x + (b.x - a.x) * m, ty = a.y + (b.y - a.y) * m;
     n.ang = a.a + (b.a - a.a) * m;
+    const cr0 = CORNER[n.sq];
+    n.rs = (a.rs ?? 1) + ((b.rs ?? 1) - (a.rs ?? 1)) * m;
+    n.cr = (a.cr ?? cr0) + ((b.cr ?? cr0) - (a.cr ?? cr0)) * m;
+    n.ex = (a.ex ?? 0) + ((b.ex ?? 0) - (a.ex ?? 0)) * m;
+    n.ey = (a.ey ?? 0) + ((b.ey ?? 0) - (a.ey ?? 0)) * m;
     if (!reduce) { tx += Math.sin(time * 0.7 + n.ph) * 4; ty += Math.cos(time * 0.55 + n.ph * 1.3) * 4; }
     let fx = (tx - n.x) * stiff, fy = (ty - n.y) * stiff;
 
@@ -1409,6 +1543,25 @@ function frame(now) {
     }
   }
 
+  // work thumbnails ride their tile nodes and fade in once the grid has mostly formed
+  workAmt = (from === WORK ? 1 - m : 0) + (to === WORK ? m : 0);
+  const G = grid();
+  const ta = Math.max(0, (workAmt - 0.7) / 0.3);
+  for (const T of thumbs) {
+    const n = nodes.find(k => k.tile === T.i);
+    if (!n) continue;
+    n.hov = (n.hov || 0) + ((T.hover ? 1 : 0) - (n.hov || 0)) * (1 - Math.exp(-dt * 10));
+    const k = (1 + 0.05 * n.hov) * scale / dpr, inset = 5;
+    const w = (G.tw - inset * 2) * k, h = (G.th - inset * 2) * k;
+    const sx = (n.x * scale + W / 2) / dpr, sy = (n.y * scale + H / 2) / dpr;
+    T.el.style.width = w.toFixed(1) + 'px'; T.el.style.height = h.toFixed(1) + 'px';
+    T.el.style.borderRadius = (G.th / 2 * 0.12 * 0.8 * k).toFixed(1) + 'px';
+    T.el.style.transform = `translate3d(${(sx - w / 2).toFixed(1)}px, ${(sy - h / 2).toFixed(1)}px, 0)`;
+    T.el.style.opacity = (ta * ta).toFixed(3);
+    const live = ta > 0.6;
+    if (live !== T.live) { T.live = live; T.el.classList.toggle('live', live); T.el.tabIndex = live ? 0 : -1; }
+  }
+
   // labels: the blob swells and clears its centre, then the text fades in on top of it
   for (const n of nodes) n.labT = 0;
   const fs = flash > 0.02 ? flash * 3 : 0;
@@ -1459,9 +1612,15 @@ function frame(now) {
     const c = Math.cos(n.ang || 0), s = Math.sin(n.ang || 0);
     const ox = n.rox * c - n.roy * s, oy = n.rox * s + n.roy * c;
     const lab = n.lab || 0;
-    const flag = n.layer === 0 ? n.flag * (1 - lab) : n.layer === 1 && lab > 0.5 ? 0 : n.flag;
-    arrA.set([n.x, n.y, n.r * e * (1 + 0.22 * lab), flag], count * 4);
-    arrB.set([n.x + ox, n.y + oy, n.hole * e * (1 - lab), n.layer + 4 * n.sq], count * 4);
+    const isTile = n.tile >= 0 && workAmt > 0.3;
+    const flag = n.layer === 0 ? n.flag * (1 - lab) : (n.layer === 1 && lab > 0.5) || isTile ? 0 : n.flag;
+    const rs = n.rs ?? 1;
+    arrA.set([n.x, n.y, n.r * e * rs * (1 + 0.22 * lab) * (1 + 0.05 * (n.hov || 0)), flag], count * 4);
+    const ext = (n.ex || 0) > 0.5 || (n.ey || 0) > 0.5;
+    const cr = ext ? Math.min(n.cr ?? 1, 0.98) : n.cr ?? CORNER[n.sq];
+    const bx = n.rox || n.roy ? n.x + ox : n.x + (n.ex || 0);
+    const by = n.rox || n.roy ? n.y + oy : n.y + (n.ey || 0);
+    arrB.set([bx, by, n.hole * e * rs * (1 - lab), n.layer + 4 * Math.round(cr * 255)], count * 4);
     count++;
   }
   gl.uniform2f(U.uRes, W, H);
@@ -1485,7 +1644,8 @@ function frame(now) {
   gl.uniform1f(U.uDash, dashMode);
   gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
   gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
-  gl.uniform1f(U.uK, Math.max(P_.k, 0.5));
+  // the grid needs crisp gutters, so the goo thins while it's up
+  gl.uniform1f(U.uK, Math.max(P_.k * (1 - 0.6 * workAmt), 0.5));
   gl.uniform1f(U.uGlow, P_.glow);
   gl.uniform1f(U.uContours, P_.contours);
   gl.uniform1f(U.uFlash, flash > 0.01 ? flash : 0);
