@@ -1,7 +1,8 @@
 <title>Goo Field</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
+<!-- Krona One is the capability cards' stand-in if Loos doesn't load -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Krona+One&display=swap">
 <!-- Loos comes from the commms Typekit kit; it's domain-locked to hindsightvisuals.github.io, so local runs fall back -->
 <link rel="preconnect" href="https://use.typekit.net" crossorigin>
 <link rel="stylesheet" href="https://use.typekit.net/jhm5bdq.css">
@@ -50,6 +51,10 @@ body {
 }
 /* invisible scroll track: one screen per section, the field stays fixed behind */
 .sections section { height: 100vh; height: 100svh; }
+/* sections sit above the fixed canvas for their content, but let the field keep the pointer */
+.sections { position: relative; z-index: 1; pointer-events: none; }
+.filters { z-index: 2; }
+.sections .caps-hero h2, .sections .svc-list { pointer-events: auto; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 .label {
@@ -260,6 +265,108 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px 
 .filters button[aria-pressed="true"] .n { color: inherit; opacity: 0.6; }
 .filters button:disabled { opacity: 0.28; cursor: not-allowed; }
 .filters .clear { border-style: dashed; }
+/* the cards need the whole width: the HUD steps aside while you read them */
+body.in-caps .hud { opacity: 0; pointer-events: none; }
+body.in-caps .hud > * { pointer-events: none; }
+
+/* ---------- capabilities (Figma: Design System › Frame 109, Service Card set) ---------- */
+:root {
+  /* Typekit's Loos first (see the head), then the local install, then Krona One */
+  --f-loos-x: "loos-extended", "Loos Extended", "Krona One", system-ui, sans-serif;
+  --f-loos-w: "loos-wide", "Loos Wide", "Krona One", system-ui, sans-serif;
+  --f-galix: "Galix Mono", var(--mono);
+  --nav-h: 96px;
+}
+@media (max-width: 900px) { :root { --nav-h: 72px; } }
+.sections section.caps { height: auto; min-height: 100vh; padding-bottom: 96px; }
+/* the heading pins just under the sticky nav; each card pins below it, one step lower than the last, and
+   the next card slides over it. --step is how much of a covered card stays visible. */
+.caps { --hero-h: calc(var(--nav-h) + 40px + clamp(22px, 3.35vw, 48px)); --step: 108px; }
+.caps-hero { position: sticky; top: var(--nav-h); padding: 24px 24px 16px; box-sizing: border-box; z-index: 1; }
+.caps-hero h2.goo { color: transparent; }
+.caps-hero h2 {
+  margin: 0; font-family: var(--f-loos-x); font-weight: 700; font-size: clamp(22px, 3.35vw, 48px);
+  line-height: 1; color: #fff; letter-spacing: 0;
+}
+.svc-list { display: grid; gap: 32px; padding: 0 48px 45vh; margin-top: 178px; position: relative; }
+.svc { position: sticky; top: calc(var(--hero-h) + var(--i) * var(--step)); }
+/* cards ride their shader tiles (transform set per frame); the gaps let the cursor reach the field */
+.svc { opacity: 0; will-change: transform, opacity; cursor: pointer; }
+.sections .svc-list { pointer-events: none; }
+.sections .svc { pointer-events: auto; }
+.svc { display: flex; gap: 8px; align-items: stretch; min-height: 200px; color: #fff; }
+.svc-id {
+  flex: 0 0 65px; box-sizing: border-box; background: transparent; border-top: 4px solid var(--c);
+  display: flex; align-items: center; justify-content: center; padding: 8px 10px;
+}
+.svc-id span {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-family: var(--f-loos-x); font-weight: 700; font-size: 24px; line-height: 0.94; color: var(--c); white-space: nowrap;
+}
+.svc-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.svc-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.svc-meta > * {
+  font-family: var(--f-galix); font-size: 12px; line-height: normal; padding: 4px 8px; border-radius: 2px;
+  background: #000; color: #fff; border-bottom: 2px solid #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.svc-meta .num { font-weight: 500; }
+.svc-meta .see {
+  font: inherit; font-family: var(--f-galix); font-size: 12px; font-weight: 500; text-align: left; cursor: pointer;
+  background: var(--c); color: #000; border: 0; border-bottom: 2px solid #000;
+}
+.svc-meta .see:hover { filter: brightness(1.12); }
+.svc-body {
+  flex: 1 1 auto; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  background: transparent; border-top: 4px solid #000; border-radius: 4px; padding: 10px 11px;
+}
+.svc.open .svc-body { padding: 10px 16px; }
+.svc-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.svc-text h3 {
+  margin: 0 0 8px; font-family: var(--f-loos-x); font-weight: 700; font-size: 48px; line-height: 0.94; color: var(--c);
+}
+.svc-text p { margin: 0; font-family: var(--f-galix); font-size: 16px; line-height: normal; color: #fff; text-wrap: balance; }
+/* the open state's extra rows unfold with a 0fr → 1fr grid track */
+.svc-more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.45s cubic-bezier(.2, .7, .2, 1); }
+.svc.open .svc-more { grid-template-rows: 1fr; }
+.svc-more > div { overflow: hidden; min-height: 0; }
+.svc-more ul {
+  list-style: none; margin: 24px 0 0; padding: 0; display: grid; gap: 8px;
+  font-family: var(--f-loos-x); font-weight: 700; font-size: 24px; line-height: 0.94; color: #919191;
+}
+.svc-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; padding: 24px 0 14px; }
+.svc-tools span {
+  font-family: var(--f-galix); font-weight: 500; font-size: 12px; letter-spacing: 1.68px; text-transform: uppercase;
+  color: #fff; background: #000; border: 2px solid #6b6b6b; border-radius: 4px; padding: 8px 14px; white-space: nowrap;
+}
+.svc-side { flex: 0 0 238px; display: flex; justify-content: flex-end; }
+.svc-toggle {
+  position: relative; width: 152px; height: 138px; flex: none; overflow: hidden; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  background: var(--c20); border: 1px solid var(--c); border-radius: 4px;
+  font-family: var(--f-loos-w); font-weight: 700; font-size: 16px; color: var(--c);
+}
+.svc-toggle .arrow { position: absolute; left: calc(50% - 0.5px); bottom: -1px; transform: translateX(-50%); width: 115px; height: 157px; }
+.svc-toggle .arrow img { display: block; }
+.svc-toggle .arrow.up { transform: translateX(-50%) rotate(180deg); }
+.svc-toggle .arrow.up, .svc.open .svc-toggle .arrow.down { display: none; }
+.svc.open .svc-toggle .arrow.up { display: block; }
+.svc-toggle .lbl { position: relative; }
+.svc-toggle:hover { background: color-mix(in srgb, var(--c) 30%, transparent); }
+.svc-toggle:focus-visible, .svc-meta .see:focus-visible { outline: 1px solid var(--c); outline-offset: 3px; }
+@media (max-width: 700px) {
+  .caps { --step: 72px; }
+  .svc-list { padding: 0 16px 45vh; margin-top: 120px; }
+  .svc-id { flex-basis: 40px; padding: 6px; }
+  .svc-id span { font-size: 16px; }
+  .svc-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .svc-body { flex-direction: column-reverse; }
+  .svc-side { flex-basis: auto; align-self: stretch; }
+  .svc-toggle { width: 100%; height: 56px; }
+  .svc-toggle .arrow { display: none !important; }
+  .svc-text h3 { font-size: 32px; }
+  .svc-more ul { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .svc-more { transition: none; } }
 @media (max-width: 700px) { .filters { left: 16px; right: 16px; justify-content: flex-start; } }
 @media (max-width: 900px) { .filters { top: calc(80px + env(safe-area-inset-top, 0px)); } }
 @media (prefers-reduced-motion: reduce) { .filters, .hud, .switch .knob, .switch .icon, .nav-links button { transition: none; } }
@@ -955,6 +1062,13 @@ const tileNode = [];
     if (best) { best.tile = i; tileNode[i] = best; }
   });
 }
+// capabilities cards: two more shells each (the body and the serv.00X label column)
+const capNode = [];
+{
+  const pool = nodes.filter(n => n.layer === 1 && !n.rox && !n.roy && n.tile < 0);
+  for (const n of nodes) n.cap = -1;
+  for (let k = 0; k < 8 && k < pool.length; k++) { pool[k].cap = k; capNode[k] = pool[k]; }
+}
 
 function grid() {
   const key = W + 'x' + H + ':' + gridVer;
@@ -1028,9 +1142,60 @@ layouts.push(n => {
   }
   return edgeRing(n, G, n.layer === 3 ? 1 : 0.5);
 });
-const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder', 'Work'];
+// 6 capabilities: each card's body + label become shader tiles sized from the DOM boxes; the
+// goo core beads in the gaps between them. Reached by scrolling to the cards.
+const CAPS = 6;
+let capsGeo = null, capsAmt = 0, capsScrollY = scrollY;
+let capsPrev = null, capsDelta = [];
+function measureCaps() {
+  const u = dpr / scale, vw = W / scale, vh = H / scale;
+  const toW = (x, y) => [(x * dpr - W / 2) / scale, (y * dpr - H / 2) / scale];
+  const rects = [], gut = [];
+  // boxes measured without the per-frame ride offset, so the tiles chase the layout, not themselves
+  const boxes = svcCards.map(C => {
+    const r = C.el.getBoundingClientRect(), ox = C.dx || 0, oy = C.dy || 0;
+    return { ox, oy, top: r.top - oy, bottom: r.bottom - oy, left: r.left - ox, right: r.right - ox };
+  });
+  svcCards.forEach((C, i) => {
+    const b = boxes[i], nx = boxes[i + 1];
+    // where the next card starts covering this one (css px from the viewport top)
+    const clip = nx && nx.top < b.bottom ? nx.top : Infinity;
+    C.cut = clip === Infinity ? 0 : Math.max(0, b.bottom - clip);
+    for (const [k, part] of [[2 * i, C.body], [2 * i + 1, C.id]]) {
+      const r = part.getBoundingClientRect();
+      let top = r.top - b.oy, bottom = Math.min(r.bottom - b.oy, clip);
+      if (bottom < top + 6) { top = Math.min(top, clip - 6); bottom = top + 6; } // tucked under: a sliver
+      const [cx, cy] = toW(r.left - b.ox + r.width / 2, (top + bottom) / 2);
+      rects[k] = { cx, cy, hw: r.width * u / 2, hh: (bottom - top) * u / 2 };
+    }
+    const [x0, y0] = toW(b.left, b.top), [x1, y1] = toW(b.right, Math.min(b.bottom, clip));
+    const midX = (rects[2 * i + 1].cx + rects[2 * i + 1].hw + rects[2 * i].cx - rects[2 * i].hw) / 2;
+    if (y1 - y0 > 8) gut.push([midX, y0, midX, y1]);
+    if (nx && nx.top >= b.bottom) { const [, y] = toW(0, (b.bottom + nx.top) / 2); gut.push([x0, y, x1, y]); }
+  });
+  if (!gut.length) gut.push([-vw / 4, 0, vw / 4, 0]);
+  const glen = gut.reduce((t, g) => t + Math.hypot(g[2] - g[0], g[3] - g[1]), 0) || 1;
+  // how far each tile's box moved since last frame: the tiles take that move directly (no lag),
+  // whether the card scrolled with the page or is pinned
+  capsDelta = rects.map((r, k) => capsPrev && capsPrev[k] ? [r.cx - capsPrev[k].cx, r.cy - capsPrev[k].cy] : [0, 0]);
+  capsPrev = rects;
+  return { u, vw, vh, rects, gut, glen };
+}
+layouts.push(n => {
+  const C = capsGeo || (capsGeo = measureCaps());
+  if (n.cap >= 0 && C.rects[n.cap]) {
+    const r = C.rects[n.cap], m = Math.max(1, Math.min(r.hw, r.hh));
+    return { x: r.cx, y: r.cy, a: 0, rs: m / (n.r * 0.92), cr: Math.min(0.9, 4 * C.u / m), ex: r.hw - m, ey: r.hh - m };
+  }
+  if (n.layer === 0) {
+    const [x, y] = gutterPoint(C, n.ci * 0.6180339 + 0.05);
+    return { x, y, a: 0, rs: Math.min(1, 4 * C.u / n.r) };
+  }
+  return edgeRing(n, C, n.layer === 3 ? 1 : 0.5);
+});
+const LAYOUT_NAMES = ['Centred', 'Square', 'About', 'Diamond', 'Cylinder', 'Work', 'Capabilities'];
 // background orbit lines take the layout's shape too: weights for circle, square, diamond, drum
-const LAYOUT_ORB = [[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0]];
+const LAYOUT_ORB = [[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 1, 0, 0]];
 let from = 0, to = 0, morphT = 1, workAmt = 0;
 const morphBtn = document.getElementById('morph');
 
@@ -1097,7 +1262,7 @@ setGlyphCount(Math.min(16, GN));
 const SECTIONS = [
   { name: 'Intro', title: 'A field that listens', layout: 0, labels: [['Scroll', 0, 262]] },
   { name: 'Work', title: 'Selected work', layout: 5, labels: [] }, // thumbnails instead of labels
-  { name: 'Capabilities', title: 'What I make', layout: 3, labels: [['3D', 62, -168], ['Motion', -225, 93], ['Web', 0, 345]] },
+  { name: 'Capabilities', title: 'What I do', layout: 0, labels: [] }, // service cards
   { name: 'About', title: 'How it’s made', layout: 2, labels: [['Studio', -225, -25], ['Process', 247, -25], ['Tools', -64, 105]] },
 ]; // Contact isn't a section: it lives behind the nav emblem
 // hover colours for the nav, in order: copper, yellow, green, cyan, lilac
@@ -1143,6 +1308,94 @@ SECTIONS.forEach((sec, si) => {
     labels.push({ el, node, twin, si, a: 0 });
   }
 });
+// ---------- capabilities: Service Card component (Figma 209:3560), Close/Open states ----------
+const SERVICES = [
+  { id: 'serv.001', num: '#00001', time: '05:121:20:06:07', name: '3D design', key: '3d', c: [97, 232, 145], tag: '3D',
+    items: ['Modeling and Design', 'Asset Library', 'Product Stills and Animation', '3D Websites', 'Hero Animation', 'Motion Graphics'] },
+  { id: 'serv.002', num: '#00002', time: '06:201:01:30:31', name: 'animation', key: 'animation', c: [150, 85, 249], tag: 'Animation',
+    items: ['motion graphics', 'character animation', 'intro sequence', 'explainer', 'procedural motion', 'generative motion'] },
+  { id: 'serv.003', num: '#00003', time: '03:273:00:00:00', name: 'UX/UI', key: 'ux', c: [251, 215, 10], tag: 'UX/UI',
+    items: ['Discovery & Research', 'Design Systems', 'Web Strategy', 'Custom Builds', 'Launch & Deployment', 'Content Management Solution'] },
+  { id: 'serv.004', num: '#00004', time: '07:293:04:03:51', name: 'brand', key: 'brand', c: [22, 200, 248], tag: 'Art Direction',
+    items: ['Positioning & Persona', 'Strategy & Consulting', 'Motion Identity', 'Visual Identity', 'Style Guides'] },
+];
+const SVC_DESC = 'Web experiences that show, not tell. Build an experience that invests in your users.';
+const SVC_TOOLS = ['GLSL', 'three.js', 'blender', 'agentic dev', 'HTML', 'JS', 'CSS', 'Webflow', 'Shopify'];
+const capsSec = sectionsEl.children[SECTIONS.findIndex(x => x.name === 'Capabilities')];
+capsSec.classList.add('caps');
+capsSec.innerHTML = `<div class="caps-hero"><h2>capabilities</h2></div><div class="svc-list"></div>`;
+const svcList = capsSec.querySelector('.svc-list');
+const svcCards = [];
+SERVICES.forEach((sv, i) => {
+  const el = document.createElement('article');
+  el.className = 'svc' + (i === 0 ? ' open' : ''); // Figma frame: 3D starts open
+  el.style.setProperty('--c', `rgb(${sv.c.join(',')})`);
+  el.style.setProperty('--c20', `rgba(${sv.c.join(',')},0.2)`);
+  el.style.setProperty('--i', i);
+  const moreId = 'svc-more-' + sv.key;
+  el.innerHTML = `
+    <div class="svc-id" aria-hidden="true"><span>${sv.id}</span></div>
+    <div class="svc-main">
+      <div class="svc-meta">
+        <span>absTime.spent</span><span>${sv.time}</span><span class="num">${sv.num}</span>
+        <button type="button" class="see">see work</button>
+      </div>
+      <div class="svc-body">
+        <div class="svc-text">
+          <h3>${sv.name}</h3>
+          <p>${SVC_DESC}</p>
+          <div class="svc-more" id="${moreId}"><div>
+            <ul>${sv.items.map(t => `<li>${t}</li>`).join('')}</ul>
+            <div class="svc-tools">${SVC_TOOLS.map(t => `<span>${t}</span>`).join('')}</div>
+          </div></div>
+        </div>
+        <div class="svc-side">
+          <button type="button" class="svc-toggle" aria-controls="${moreId}">
+            <span class="arrow down"><img src="assets/capabilities/arrow-${sv.key}-close.svg" width="115" height="157" alt=""></span>
+            <span class="arrow up"><img src="assets/capabilities/arrow-${sv.key}-open.svg" width="115" height="157" alt=""></span>
+            <span class="lbl"></span>
+          </button>
+        </div>
+      </div>
+    </div>`;
+  svcList.appendChild(el);
+  svcCards.push({ el, body: el.querySelector('.svc-body'), id: el.querySelector('.svc-id'), dx: 0, dy: 0 });
+  const btn = el.querySelector('.svc-toggle'), lbl = btn.querySelector('.lbl');
+  const more = el.querySelector('.svc-more');
+  const sync = () => {
+    const open = el.classList.contains('open');
+    btn.setAttribute('aria-expanded', String(open));
+    lbl.textContent = open ? 'COLLAPSE' : 'EXPAND';
+    more.inert = !open; // closed rows stay out of the tab order
+  };
+  sync();
+  const toggle = () => {
+    el.classList.toggle('open'); sync();
+    audioInit();
+    if (el.classList.contains('open')) pluck(noteFreq(7 + i * 2), 0, 1.1, 0.18, 1.2);
+    else tick(noteFreq(5 + i * 2), 0, 0.05, 'triangle', 0.16);
+    // the same pulse a work thumbnail sends, fired from this card's tile
+    const n = capNode[2 * i];
+    if (n) {
+      zap(panOf(n.x));
+      if (!reduce) { shock.x = n.x; shock.y = n.y; shock.age = 0; shock.id++; }
+      if (rd) { const [u, v] = worldToUv(n.x, n.y); rd.splat(u, v, 10); }
+      flash = reduce ? 0.3 : 0.8;
+    }
+  };
+  btn.addEventListener('click', e => { e.stopPropagation(); toggle(); });
+  // the whole card is a toggle too (but not the see-work chip or text selection drags)
+  el.addEventListener('click', e => { if (!e.target.closest('.see') && !getSelection().toString()) toggle(); });
+  // the field takes the service colour while you're on its card
+  el.addEventListener('pointerenter', () => { tint.target = sv.c; });
+  el.addEventListener('pointerleave', () => { if (tint.target === sv.c) tint.target = null; });
+  // "see work" jumps to Work, filtered to this service's tag
+  el.querySelector('.see').addEventListener('click', () => {
+    sel.clear(); sel.add(sv.tag); updateFilters();
+    scrollTo({ top: sectionsEl.children[1].offsetTop, behavior: reduce ? 'auto' : 'smooth' });
+  });
+});
+
 let section = -1;
 function setSection(i) {
   if (i === section) return;
@@ -1167,6 +1420,8 @@ uniform vec3 uMouse; uniform vec4 uShock; uniform float uK; uniform float uGlow;
 uniform float uContours; uniform float uSpacing; uniform float uFlash; uniform float uMirror;
 uniform vec3 uTint; uniform float uTintAmt; uniform float uInvert;
 uniform sampler2D uRD; uniform float uRDAmt; uniform float uWork;
+// heading-as-goo: r = sharp glyphs, g = small blur (shape), b = wide blur (reach for bridging)
+uniform sampler2D uText; uniform vec4 uTextRect; uniform vec2 uTextSig; uniform float uTextAmt;
 #define GN ${GN}
 uniform vec4 uGa[GN]; uniform vec4 uGb[GN]; uniform int uGCount;
 uniform vec4 uOrb; uniform float uDash; uniform vec2 uOff; uniform vec2 uOrbS;
@@ -1249,6 +1504,21 @@ vec3 scene(vec2 p){
     float dm = length(pr - uMouse.xy) - uMouse.z;
     core = smin(core, dm, k * 1.2);
     shell = smin(shell, dm - 22., k * 2.2);
+  }
+  // the capabilities heading joins the goo: distance comes from its blurred glyph texture, so
+  // blobs and the cursor bridge into the letters and the contours wrap the word
+  if (uTextAmt > 0.001) {
+    vec2 tuv = (pr - uTextRect.xy) / uTextRect.zw;
+    if (tuv.x > 0. && tuv.x < 1. && tuv.y > 0. && tuv.y < 1.) {
+      vec3 t = texture2D(uText, tuv).rgb;
+      if (t.b > 0.02) {
+        float dS = uTextSig.x * 2.5 * (0.5 - t.g);
+        float dR = uTextSig.y * 2.5 * (0.5 - t.b);
+        float dt = (t.g > 0.15 ? dS : max(dS, dR)) + (1. - uTextAmt) * 120.;
+        core = smin(core, dt, k);
+        shell = smin(shell, dt - 16. * (1. - uWork), k * 2.2);
+      }
+    }
   }
   float coreCut = max(core, -holes);
 
@@ -1430,7 +1700,7 @@ const loc = gl.getAttribLocation(prog, 'p');
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 const U = {};
-for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uOff', 'uOrbS', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork'])
+for (const n of ['uRes', 'uScale', 'uTime', 'uA', 'uB', 'uCount', 'uMouse', 'uShock', 'uK', 'uGlow', 'uContours', 'uSpacing', 'uFlash', 'uGa', 'uGb', 'uGCount', 'uOrb', 'uOff', 'uOrbS', 'uDash', 'uMirror', 'uTint', 'uTintAmt', 'uInvert', 'uRD', 'uRDAmt', 'uWork', 'uText', 'uTextRect', 'uTextSig', 'uTextAmt'])
   U[n] = gl.getUniformLocation(prog, n);
 const arrA = new Float32Array(N * 4), arrB = new Float32Array(N * 4);
 const arrGa = new Float32Array(GN * 4), arrGb = new Float32Array(GN * 4);
@@ -1595,6 +1865,70 @@ const rd = (() => {
 })();
 let rdTimer = 0;
 addEventListener('resize', () => { clearTimeout(rdTimer); rdTimer = setTimeout(() => rd && rd.rebuild(), 150); });
+// ---------- heading as goo ----------
+// The h2 is rasterised (same computed font) into a texture: sharp glyphs in red, a 3px blur in
+// green for the letter shapes and an 18px blur in blue so the field can reach out and bridge in.
+// Needs canvas filters; without them the DOM heading simply stays visible.
+const goohead = (() => {
+  const h2 = capsSec.querySelector('h2');
+  const cv = document.createElement('canvas');
+  const cx = cv.getContext('2d');
+  if (!h2 || !cx || !('filter' in cx)) return null;
+  const SIG1 = 3, SIG2 = 18, PAD = 3 * SIG2 + 6; // css px
+  const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.activeTexture(gl.TEXTURE0);
+  let box = null; // css size of the text box the texture was built for
+  function build() {
+    const st = getComputedStyle(h2);
+    const range = document.createRange(); range.selectNodeContents(h2);
+    const r = range.getBoundingClientRect(); // the glyphs, not the full-width block
+    if (r.width < 1) return;
+    const k = Math.min(devicePixelRatio || 1, 2);
+    const w = Math.ceil((r.width + 2 * PAD) * k), h = Math.ceil((r.height + 2 * PAD) * k);
+    cv.width = w; cv.height = h;
+    cx.fillStyle = '#000'; cx.fillRect(0, 0, w, h);
+    cx.globalCompositeOperation = 'lighter';
+    cx.font = `${st.fontWeight} ${parseFloat(st.fontSize) * k}px ${st.fontFamily}`;
+    cx.textBaseline = 'top';
+    const draw = (color, blur) => {
+      cx.filter = blur ? `blur(${blur * k}px)` : 'none';
+      cx.fillStyle = color;
+      // nudge so the canvas glyph top matches the DOM line box
+      cx.fillText(h2.textContent, PAD * k, PAD * k + (r.height - parseFloat(st.fontSize)) * 0.5 * k);
+    };
+    draw('#f00', 0); draw('#0f0', SIG1); draw('#00f', SIG2);
+    cx.filter = 'none'; cx.globalCompositeOperation = 'source-over';
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    gl.activeTexture(gl.TEXTURE0);
+    box = { w: r.width, h: r.height };
+    h2.classList.add('goo');
+  }
+  build();
+  document.fonts?.ready.then(build).catch(() => {});
+  addEventListener('resize', () => setTimeout(build, 60));
+  return {
+    // world-space rect of the texture + how much of it to show
+    frame() {
+      if (!box) return null;
+      const range = document.createRange(); range.selectNodeContents(h2);
+      const r = range.getBoundingClientRect();
+      if (r.bottom < -PAD || r.top > innerHeight + PAD) return null;
+      const u = dpr / scale;
+      return { x: ((r.left - PAD) * dpr - W / 2) / scale, y: ((r.top - PAD) * dpr - H / 2) / scale,
+        w: (box.w + 2 * PAD) * u, h: (box.h + 2 * PAD) * u, s1: SIG1 * u, s2: SIG2 * u, tex };
+    },
+  };
+})();
+
 // world (y down) -> sim uv (y up)
 const worldToUv = (x, y) => [(x * scale + W / 2) / W, 1 - (y * scale + H / 2) / H];
 
@@ -1811,7 +2145,7 @@ canvas.addEventListener('pointerdown', e => {
   if (rd) { const [u, v] = worldToUv(mouse.tx, mouse.ty); rd.splat(u, v, 12); }
   else { shock.x = mouse.tx; shock.y = mouse.ty; }
   flash = reduce ? 0.35 : 1;
-  if (morphClick.checked && to !== WORK) morph(); // clicks in the grid shouldn't break it up
+  if (morphClick.checked && to !== WORK && to !== CAPS) morph(); // clicks in a grid shouldn't break it up
 });
 addEventListener('pointerup', () => { mouse.down = false; });
 
@@ -2217,9 +2551,9 @@ addEventListener('click', e => {
 });
 
 // the form, plain for now: the commms version fed typing into the blob; that comes back mapped to the goo later
-const SERVICES = ['Brand Design', 'Landing Page', '3D Rendering', 'Product Rendering', 'eCommerce', 'Marketing Site', '3D Animation', '3D Website', 'User Experience Design', 'Brand Strategy', 'App Design'];
+const FORM_SERVICES = ['Brand Design', 'Landing Page', '3D Rendering', 'Product Rendering', 'eCommerce', 'Marketing Site', '3D Animation', '3D Website', 'User Experience Design', 'Brand Strategy', 'App Design'];
 const chipsEl = document.getElementById('chips');
-for (const s of SERVICES) {
+for (const s of FORM_SERVICES) {
   const b = document.createElement('button');
   b.type = 'button'; b.textContent = s; b.setAttribute('aria-pressed', 'false');
   b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')));
@@ -2265,6 +2599,12 @@ function frame(now) {
   let si = 0;
   for (let i = 0; i < secEls.length; i++) if (secEls[i].offsetTop <= scrollY + innerHeight * 0.5) si = i;
   setSection(si);
+  // inside Capabilities the field stays centred under the heading, then builds the cards
+  if (SECTIONS[si].name === 'Capabilities' && !contactOpen) {
+    const want = svcList.getBoundingClientRect().top < innerHeight * 0.6 ? CAPS : SECTIONS[si].layout;
+    if (want !== to) morphTo(want);
+  }
+  if (to === CAPS || from === CAPS) capsGeo = measureCaps(); else capsPrev = null;
   morphT = Math.min(1, morphT + dt / 1.4);
   const m = ease(morphT);
   shock.age += dt;
@@ -2287,14 +2627,15 @@ function frame(now) {
   const scrollD = (workScroll - workScrollApplied) * grid().u * workAmt;
   workScrollApplied = workScroll;
   // orbit: weaker springs and less damping read as weightlessness
-  const orb = orbitFrame(dt, 1 - workAmt);
+  const orb = orbitFrame(dt, 1 - Math.max(workAmt, capsAmt)); // the grids (Work, the capability cards) hold still
   const stiff = P_.stiff * (1 - 0.6 * orb), damp = 2 * Math.sqrt(P_.stiff) * 0.55 * (1 - 0.65 * orb);
   // joystick: the comp slides home while the Work grid or the contact panel needs it centred
-  const [offX, offY] = joyFrame(dt, contactOpen ? 0 : 1 - workAmt);
+  const [offX, offY] = joyFrame(dt, contactOpen ? 0 : 1 - Math.max(workAmt, capsAmt));
   for (const n of nodes) {
     if (scrollD && inGrid(n)) n.y -= scrollD;
-    // case-study shells show in Work whatever the ball count
-    const want = n.vis || (n.tile >= 0 && (to === WORK || from === WORK));
+    if (n.cap >= 0 && capsAmt > 0 && capsDelta[n.cap]) { n.x += capsDelta[n.cap][0] * capsAmt; n.y += capsDelta[n.cap][1] * capsAmt; }
+    // case-study / card shells show in their layouts whatever the ball count
+    const want = n.vis || (n.tile >= 0 && (to === WORK || from === WORK)) || (n.cap >= 0 && (to === CAPS || from === CAPS));
     n.s += ((want ? 1 : 0) - n.s) * (1 - Math.exp(-dt * 6));
     const a = layouts[from](n), b = layouts[to](n);
     let [tx, ty] = orbitHome(n, a.x + (b.x - a.x) * m, a.y + (b.y - a.y) * m, orb, dt);
@@ -2412,6 +2753,7 @@ function frame(now) {
     filtersEl.classList.toggle('on', inWork);
     document.body.classList.toggle('in-work', inWork);
   }
+  document.body.classList.toggle('in-caps', SECTIONS[section].name === 'Capabilities');
   for (const T of thumbs) {
     const n = tileNode[T.i];
     if (!n) continue;
@@ -2428,6 +2770,22 @@ function frame(now) {
     const live = shown && T.a > 0.6;
     if (live !== T.live) { T.live = live; T.el.classList.toggle('live', live); T.el.tabIndex = live ? 0 : -1; }
   }
+
+  capsAmt = (from === CAPS ? 1 - m : 0) + (to === CAPS ? m : 0);
+  const ca = Math.max(0, (capsAmt - 0.45) / 0.55);
+  svcCards.forEach((C, i) => {
+    const n = capNode[2 * i], r = capsGeo && capsGeo.rects[2 * i];
+    if (n && r && capsAmt > 0.01) {
+      const u = dpr / scale;
+      C.dx = (n.x - r.cx) / u * capsAmt; C.dy = (n.y - r.cy) / u * capsAmt;
+    } else { C.dx = 0; C.dy = 0; }
+    C.el.style.transform = `translate3d(${C.dx.toFixed(1)}px, ${C.dy.toFixed(1)}px, 0)`;
+    C.el.style.opacity = (ca * ca).toFixed(3);
+    C.el.style.pointerEvents = ca > 0.5 ? "auto" : "none";
+    // the next card covers this one: hide what's underneath (the backgrounds are the shader's)
+    const cutPx = capsAmt > 0.01 ? C.cut || 0 : 0;
+    C.el.style.clipPath = cutPx > 0.5 ? `inset(0 0 ${cutPx.toFixed(1)}px 0)` : 'none';
+  });
 
   // labels: the blob swells and clears its centre, then the text fades in on top of it
   for (const n of nodes) n.labT = 0;
@@ -2468,6 +2826,16 @@ function frame(now) {
     gl.bindTexture(gl.TEXTURE_2D, rd.tex());
   }
   gl.useProgram(prog);
+  const gh = !contactOpen && goohead && goohead.frame(); // it's placed in viewport space, which the contact panel isn't
+  gl.uniform1i(U.uText, 1);
+  gl.uniform1f(U.uTextAmt, gh ? 1 : 0);
+  if (gh) {
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, gh.tex);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform4f(U.uTextRect, gh.x, gh.y, gh.w, gh.h);
+    gl.uniform2f(U.uTextSig, gh.s1, gh.s2);
+  }
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
@@ -2480,7 +2848,7 @@ function frame(now) {
     const os = n.os || 1; // orbit perspective: the whole shape scales, capsule and rectangle extents included
     const ox = (n.rox * c - n.roy * s) * os, oy = (n.rox * s + n.roy * c) * os;
     const lab = n.lab || 0;
-    const isTile = n.tile >= 0 && workAmt > 0.3;
+    const isTile = (n.tile >= 0 && workAmt > 0.3) || (n.cap >= 0 && capsAmt > 0.3);
     const flag = n.layer === 0 ? n.flag * (1 - lab) : (n.layer === 1 && lab > 0.5) || isTile ? 0 : n.flag;
     const rs = (n.rs ?? 1) * os;
     arrA.set([n.x, n.y, n.r * e * rs * (1 + 0.22 * lab) * (1 + 0.02 * (n.hov || 0)), flag], count * 4);
@@ -2518,8 +2886,9 @@ function frame(now) {
   gl.uniform3f(U.uMouse, mirror ? mouse.ux : mouse.x, mouse.y, mouse.r);
   gl.uniform4f(U.uShock, shock.x, shock.y, shockR, shockAmp > 0.02 ? shockAmp : 0);
   // the grid needs crisp gutters, so the goo thins while it's up
-  gl.uniform1f(U.uK, Math.max(P_.k * (1 - 0.85 * workAmt), 0.5));
-  gl.uniform1f(U.uWork, workAmt);
+  const gridAmt = Math.max(workAmt, capsAmt);
+  gl.uniform1f(U.uK, Math.max(P_.k * (1 - 0.85 * gridAmt), 0.5));
+  gl.uniform1f(U.uWork, gridAmt);
   gl.uniform1f(U.uGlow, P_.glow);
   gl.uniform1f(U.uContours, P_.contours);
   gl.uniform1f(U.uFlash, flash > 0.01 ? flash : 0);
