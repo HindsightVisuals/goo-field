@@ -798,7 +798,30 @@ const noteFreq = i => 110 * Math.pow(2, (SCALE[((i % 5) + 5) % 5] + 12 * Math.fl
 const A = { ctx: null, on: true, vol: 0.7, speed: 0, lastTick: 0, lastCascade: 0 };
 const clampPan = v => Math.max(-0.9, Math.min(0.9, v));
 
+// iOS files Web Audio under 'ambient', which the ringer switch silences — a phone on silent hears nothing at full
+// volume. Asking for 'playback' (Safari 16.4+) plays through it like a video does; older iOS gets the same session
+// from a looping silent <audio>, which has to start inside a gesture, so it's retried on each one until it takes.
+let sessionDone = false, sessionEl = null;
+function playbackSession() {
+  if (sessionDone) return;
+  try { if (navigator.audioSession) { navigator.audioSession.type = 'playback'; sessionDone = true; return; } } catch (e) {}
+  if (!/iP(hone|ad|od)/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent))) { sessionDone = true; return; }
+  if (sessionEl) { const p = sessionEl.play(); if (p) p.then(() => { sessionDone = true; }).catch(() => {}); return; }
+  const n = 800, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVEfmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
+  v.setUint16(32, 1, true); v.setUint16(34, 8, true); str(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128); // 8-bit silence sits at the midpoint
+  const el = sessionEl = document.createElement('audio');
+  el.src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  el.loop = true; el.setAttribute('playsinline', ''); el.setAttribute('x-webkit-airplay', 'deny');
+  const p = el.play();
+  if (p) p.then(() => { sessionDone = true; }).catch(() => {}); else sessionDone = true;
+}
+
 function audioInit() {
+  playbackSession();
   // 'interrupted' is WebKit's state after a call, screen lock or backgrounding; it needs the same nudge
   if (A.ctx) { if (A.ctx.state !== 'running' && A.ctx.state !== 'closed') A.ctx.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext;
